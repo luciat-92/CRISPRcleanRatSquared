@@ -1,12 +1,17 @@
 Package: CRISPRcleanRatSquared
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Title: Unsupervised Correction of Gene Independent Cell Responses in dual 
+  CRISPR-Cas9 screenings
+Version: 0.1.0
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+  person("Lucia", "Trastulla", , "lucia.trastulla@fht.org", role = "aut", 
+    comment = c(ORCID = "0000-0001-8749-475X"))
+Description: Unsupervised approach to correct gene independent responses to 
+  CRISPRcas9 targeting in dual combinatorial screenings. This package is based 
+  on CRISPRCleanR for single gene knock-out.
+License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a license
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.0
+Depends: CRISPRcleanR
+Imports: readr
+Suggests: lintr
