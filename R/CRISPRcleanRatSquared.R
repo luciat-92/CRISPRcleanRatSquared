@@ -333,3 +333,1108 @@ ccr2.logFCs2chromPos <- function(
   return(combined)
   
 }
+
+#' Title
+#'
+#' collapse avgFC via mean for each gene in guide1 or guide2 across all the other genes
+#' store also number of genes from which mean is computed
+#'
+#' @param dual_FC 
+#' @param single_FC 
+#' @param match_dual_single_seq 
+#' @param guide_id 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.avgSingleGuides <- function(
+  dual_FC, 
+  single_FC, 
+  match_dual_single_seq, 
+  guide_id
+) { 
+  
+  # filter library seq based on single_FC match
+  match_dual_single_seq <- match_dual_single_seq %>% 
+    dplyr::filter(ID_single %in% rownames(single_FC))
+  
+  # filter dual per guides with a single counterpart
+  guide <- dual_FC %>% 
+    dplyr::filter((sgRNA1_WGE_ID %in% match_dual_single_seq$ID &   
+                     sgRNA2_WGE_ID %in% match_dual_single_seq$ID) |  
+                    (grepl("NONTARGET", Gene1) & sgRNA2_WGE_ID %in% match_dual_single_seq$ID) | 
+                    (grepl("NONTARGET", Gene2) & sgRNA1_WGE_ID %in% match_dual_single_seq$ID))
+  
+  var <- sprintf("sgRNA%i", guide_id)
+  
+  guide <- guide %>% 
+    dplyr::filter(!is.na(!!sym(sprintf("%s_BP", var)))) %>% 
+    dplyr::group_by(!!sym(sprintf("%s_WGE_ID", var))) %>% 
+    dplyr::summarise(sgRNA_Library = unique(!!sym(sprintf("%s_Library", var))), 
+                     info_subtype = paste0(unique(info_subtype), collapse = ","), 
+                     genes = unique(!!sym(sprintf("Gene%i", guide_id))), 
+                     avgFC = mean(avgFC), 
+                     n = dplyr::n(), 
+                     CHR =  unique(!!sym(sprintf("%s_Chr", var))), 
+                     startp = unique(!!sym(sprintf("%s_Start", var))), 
+                     endp = unique(!!sym(sprintf("%s_End", var))),
+                     BP = unique(!!sym(sprintf("%s_BP", var))), 
+                     SEQ = unique(!!sym(sprintf("%s_WGE_Sequence", var)))) %>%
+    dplyr::arrange(CHR, BP) %>%
+    dplyr::ungroup() %>%
+    dplyr::rename(sgRNA_ID = !!sym(sprintf("%s_WGE_ID", var)))
+  
+  guide$sgRNA_ID_single <- match_dual_single_seq$ID_single[match(guide$sgRNA_ID, match_dual_single_seq$ID)]
+  guide$avgFC_single <- single_FC$avgFC[match(guide$sgRNA_ID_single, rownames(single_FC))]
+  guide$correction_single <- single_FC$correction[match(guide$sgRNA_ID_single, rownames(single_FC))]
+  
+  return(guide)
+  
+}
+
+#' Title
+#'
+#' @param dual_FC 
+#' @param single_FC 
+#' @param match_dual_single_seq 
+#' @param saveToFig 
+#' @param display 
+#' @param saveFormat 
+#' @param EXPname 
+#' @param outdir 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.avgSingleGuides_combine <- function(
+  dual_FC, 
+  single_FC, 
+  match_dual_single_seq, 
+  saveToFig = FALSE, 
+  display = TRUE, 
+  saveFormat = NULL, 
+  EXPname = "", 
+  outdir = "./"
+) { 
+  
+  guide1 <- ccr2.avgSingleGuides(dual_FC, single_FC, match_dual_single_seq, 1)
+  guide2 <- ccr2.avgSingleGuides(dual_FC, single_FC, match_dual_single_seq, 2)
+  
+  if (saveToFig) {
+    display <- TRUE
+    file_name <- sprintf("%s%s_CollapsedGuideCommon.%s", outdir, EXPname, saveFormat)
+  }
+  
+  
+  if (display) {
+    
+    common_guides <- dplyr::inner_join(guide1, guide2, by = "sgRNA_ID") %>% 
+      dplyr::mutate(ratio_n = n.x/n.y)
+    
+    if (nrow(common_guides) > 0) {
+      breaks_size <- round(seq(min(common_guides$ratio_n), max(common_guides$ratio_n), length.out = 6))
+      text_corr <- data.frame(label = sprintf("Pear. corr. = %.3f", cor(common_guides$avgFC.x, common_guides$avgFC.y)), 
+                              xpos = -Inf, ypos = Inf)
+      pl <- ggplot(common_guides, aes(x = avgFC.x, y = avgFC.y, 
+                                      size = ratio_n, color = ratio_n)) + 
+        geom_point(alpha = 0.5) +
+        theme_bw() + 
+        theme(legend.position = "right", plot.title = element_text(hjust = 0.5)) + 
+        scale_colour_viridis_c(breaks = breaks_size) +
+        scale_size_continuous(breaks = breaks_size) + 
+        geom_text(data = text_corr, 
+                  aes(label = label, x = xpos, y = ypos), size = 5, 
+                  hjust = -0.1, vjust = 1.1, inherit.aes = F) +
+        xlab("Guide position 1") + ylab("Guide position 2") + 
+        labs(color = "N. g1/g2", size = "N. g1/g2") + 
+        ggtitle("Guides in common")
+      print(pl)
+    }
+    
+    if (saveToFig) {
+      ggsave(filename = file_name, plot = pl, width = 6, height = 5)
+    }
+  }
+  
+  return(list(sgRNA1 = guide1, sgRNA2 = guide2))
+  
+}
+
+#' Title
+#'
+#' Model to convert combined dual to single screens
+#' that depends on the specific gene selection
+#'
+#' @param dual_collapsed 
+#' @param single_FC 
+#' @param guide_id 
+#' @param correctGW 
+#' @param display 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.modelSingleVSCombined <- function(
+  dual_collapsed, 
+  single_FC, 
+  guide_id, 
+  correctGW = NULL, 
+  display=TRUE, 
+  saveToFig=FALSE, 
+  saveFormat = "pdf",
+  outdir = "./", 
+  EXPname = ""
+) { 
+  
+  # remove NA in single screens
+  dual_collapsed <- dual_collapsed[!is.na(dual_collapsed$sgRNA_ID_single), ]
+  # fmla <- as.formula("avgFC ~ avgFC_single*correction_single")
+  fmla <- "avgFC ~ 0 + avgFC_single"
+  
+  fit_model <- glm(formula = as.formula(fmla), 
+                   data = dual_collapsed,
+                   weights = dual_collapsed$n, 
+                   family = gaussian(link = "identity"))
+  # remove outliers
+  cooksD <- cooks.distance(fit_model)
+  influential <- cooksD[(cooksD > (6 * mean(cooksD, na.rm = TRUE)))]
+
+  if (length(influential) > 0) {
+    # repeat:
+    dual_collapsed_filt <- dual_collapsed[!rownames(dual_collapsed) %in% names(influential), ]
+    fit_model <- glm(formula = as.formula(fmla), 
+                     data = dual_collapsed_filt,
+                     weights = dual_collapsed_filt$n, 
+                     family = gaussian(link = "identity"))  
+    rm_guides_cooks <- dual_collapsed[names(influential), ]
+    
+  }else{
+    dual_collapsed_filt <- dual_collapsed
+    rm_guides_cooks <- NA
+  }
+  
+  df_plot <- data.frame(avgFC =  fit_model$model$avgFC,
+                        avgFC_single = fit_model$model$avgFC_single,
+                        fitted_avgFC = fit_model$fitted.values,
+                        n_guides_in_mean = as.numeric(fit_model$weights))
+  
+  if (saveToFig) {
+    display <- TRUE
+    file_name_comp <- sprintf("%s%s_CollapsedGuide%i_vs_single.%s", outdir, EXPname, guide_id, saveFormat)
+  }
+  
+  
+  if (display) {
+    
+    breaks_size <- round(seq(min(df_plot$n_guides_in_mean), 
+                             max(df_plot$n_guides_in_mean), length.out = 6))
+    text_corr <- data.frame(
+      label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC_single, df_plot$avgFC)), 
+      xpos = -Inf, 
+      ypos = Inf)
+    
+    pl_comp <- ggplot(df_plot, aes(x = avgFC_single, y = avgFC)) + 
+      geom_point(aes(y = avgFC, size = n_guides_in_mean, color = n_guides_in_mean), 
+                 alpha = 0.5) +
+      geom_line(aes(y =  fitted_avgFC), colour = "red", size = 1) + 
+      geom_abline(intercept = 0, slope = 1, 
+                  colour = "black", size = 1, linetype = "dashed") + 
+      #geom_smooth(formula = y ~ 0 + x, method = "loess", 
+      #            span = 0.5, 
+      #            method.args = list(degree = 2)) + 
+      theme_bw() + 
+      theme(legend.position = "right", 
+            plot.title = element_text(hjust = 0.5)) + 
+      scale_colour_viridis_c(breaks = breaks_size) +
+      scale_size_continuous(breaks = breaks_size) + 
+      geom_text(data = text_corr, 
+                aes(label = label, x = xpos, y = ypos), size = 5, 
+                hjust = -0.1, vjust = 1.1, inherit.aes = F) +
+      ylab("Collapsed dual avgFC") + 
+      xlab("single avgFC") + 
+      ggtitle(sprintf("Guide position %i", guide_id))
+    print(pl_comp)
+    
+  }
+  
+  if (saveToFig) {
+    ggsave(filename = file_name_comp, plot = pl_comp, width = 6, height = 5)
+  }
+  
+  ## predict on single guides ##
+  single_FC <- single_FC %>% 
+    dplyr::rename(avgFC_single = avgFC, correction_single = correction)
+  
+  predict_single <- predict(fit_model, newdata =  single_FC)
+  predict_single_FC <- single_FC[, 1:7] %>% 
+    dplyr::mutate(sgRNA_ID_single = rownames(single_FC), 
+                  avgFC = unname(predict_single), 
+                  guideID = guide_id) %>%
+    dplyr::rename(avgFC_original = avgFC_single)
+  
+  # replace fitted with original values when available
+  predict_single_FC$avgFC[match(dual_collapsed_filt$sgRNA_ID_single, 
+                                predict_single_FC$sgRNA_ID_single)] <- dual_collapsed_filt$avgFC
+  
+  if (!is.null(correctGW)) {
+    
+    if (correctGW == "CHR") {
+      predict_single_FC <- predict_single_FC %>% 
+        dplyr::group_by(CHR) %>%
+        dplyr::rename(avgFC_uncorr = avgFC) %>%
+        dplyr::mutate(avgFC = avgFC_uncorr - mean(avgFC_uncorr)) %>%
+        dplyr::ungroup()
+    } else {
+      if (correctGW == "GW") {
+        predict_single_FC <- predict_single_FC %>% 
+          dplyr::rename(avgFC_uncorr = avgFC) %>%
+          dplyr::mutate(avgFC = avgFC_uncorr - mean(avgFC_uncorr)) %>%
+          dplyr::ungroup()
+      } else {
+        print("correctGW MUST be either CHR (per chromosome) or GW (genome-wide) or NULL (no correction)")   
+      }
+    }
+  } else {
+    predict_single_FC <- predict_single_FC %>% 
+      dplyr::mutate(avgFC_uncorr = NA)
+  }
+  
+  return(list(predict_single = predict_single_FC, 
+              model_summary = summary(fit_model), 
+              rm_guides_cooks = rm_guides_cooks))
+  
+}
+
+#' Title
+#'
+#' adjust ccr output applied to collapsed and filter per considered guide in dual
+#'
+#' @param dataInjection_correctedFCs 
+#' @param dual_collapsed 
+#' @param guide_id 
+#' @param saveToFig 
+#' @param display 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.filterGWclean <- function(
+  dataInjection_correctedFCs, 
+  dual_collapsed, 
+  guide_id, 
+  saveToFig = FALSE, 
+  display = TRUE, 
+  saveFormat = ".pdf",
+  outdir = "./", 
+  EXPname = ""
+) {
+  
+  dual_collpased_correctedFCs <- dataInjection_correctedFCs %>% 
+    dplyr::mutate(correction = correctedFC - avgFC) %>% 
+    dplyr::select(sgRNA_ID_single, avgFC_uncorr, guideIdx, 
+                  guideID, correction, correctedFC)
+  
+  complete_out <- dplyr::left_join(dual_collapsed, dual_collpased_correctedFCs) %>%
+    dplyr::mutate(correction_scaled = n*correction)
+  
+  if (saveToFig) {
+    display <- TRUE
+    file_name <- sprintf("%s%s_correction_singleVScollapsed_guide%i.%s", 
+                         outdir, EXPname, guide_id, saveFormat)
+  }
+  
+  if (display) {
+    
+    pl <- ggplot(complete_out, 
+                 aes(x = correction_single, y = correction)) + 
+      geom_point(alpha = 0.7, size = 1.5) +
+      geom_vline(xintercept = 0, linetype = "dashed", color = "red") + 
+      geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+      theme_bw() + 
+      theme(legend.position = "right") + 
+      ggtitle(sprintf("Guide position %i", guide_id)) +
+      xlab("Single correction") + 
+      ylab("Dual collapsed correction")
+    print(pl)
+    
+  }
+  
+  if (saveToFig) {
+    ggsave(filename = file_name, plot = pl, width = 4.5, height = 4.5)
+  }
+  
+  return(complete_out)
+  
+}
+
+#' Title
+#'
+#' @param dual_FC 
+#' @param dual_collapsedG1_correctedFCs 
+#' @param dual_collapsedG2_correctedFCs 
+#' @param display 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.solveLinearSys <- function(
+  dual_FC, 
+  dual_collapsedG1_correctedFCs, 
+  dual_collapsedG2_correctedFCs, 
+  display = TRUE, 
+  saveToFig = FALSE, 
+  saveFormat = "pdf",
+  outdir = "./", 
+  EXPname = ""
+) {
+  
+  ### 1. create matrix of interactions ###
+  dual_FC <- dual_FC %>% 
+    dplyr::mutate(sgRNA_ID_pair = paste0(sgRNA1_WGE_ID, "~", sgRNA2_WGE_ID)) 
+
+  combinations <- t(sapply(dual_collapsedG1_correctedFCs$sgRNA_ID, 
+                           function(x) paste0(x, "~", dual_collapsedG2_correctedFCs$sgRNA_ID)))
+  matrix_interactions <- apply(combinations, 2, 
+                               function(x) as.numeric(x %in% dual_FC$sgRNA_ID_pair))
+  rownames(matrix_interactions) <- dual_collapsedG1_correctedFCs$sgRNA_ID
+  colnames(matrix_interactions) <- dual_collapsedG2_correctedFCs$sgRNA_ID
+  # remove rows and columns with no index, correspond to pairs including "NONTARGET"
+  id_rm_row <- rowSums(matrix_interactions) == 0
+  id_rm_col <- colSums(matrix_interactions) == 0
+  matrix_interactions <- matrix_interactions[!id_rm_row, ]
+  matrix_interactions <- matrix_interactions[, !id_rm_col]
+  combinations <- combinations[!id_rm_row, ]
+  combinations <- combinations[, !id_rm_col]
+  
+  ### 2. create matrix of system: ### 
+  # n.eq=nrow(int)+ncol(int) times n.unknowns=nrow(int)*ncol(int)
+  tmp_G1_vect <- list()
+  for (idx_row in 1:nrow(matrix_interactions)) {
+    tmp <- matrix_interactions
+    tmp[-idx_row, ] <- 0
+    tmp_G1_vect[[idx_row]] <- as.vector(t(tmp))
+  }
+  
+  tmp_G2_vect <- list()
+  for (idx_col in 1:ncol(matrix_interactions)) {
+    tmp <- matrix_interactions
+    tmp[, -idx_col] <- 0
+    tmp_G2_vect[[idx_col]] <- as.vector(t(tmp))
+  }
+  
+  matrix_sys <- rbind(do.call(rbind, tmp_G1_vect), do.call(rbind, tmp_G2_vect))
+  rownames(matrix_sys) <- c(rownames(matrix_interactions), colnames(matrix_interactions))
+  colnames(matrix_sys) <- as.vector(t(combinations))
+  
+  ### 3. create coefficient matrix ###
+  correction_vect <- c(dual_collapsedG1_correctedFCs$correction_scaled[!id_rm_row], 
+                       dual_collapsedG2_correctedFCs$correction_scaled[!id_rm_col])
+  
+  # the matrix is very sparse, 
+  time_solve <- system.time(correction_pair <- MASS::ginv(matrix_sys) %*% correction_vect)
+  print(sprintf("system solved after: %.2fs", time_solve[3]))
+  
+  # save output
+  df_corr <- data.frame(sgRNA_ID_pair = colnames(matrix_sys), 
+                        correction = correction_pair) %>%
+    dplyr::filter(sgRNA_ID_pair %in% dual_FC$sgRNA_ID_pair)
+  # add back pairs including non target sgrna
+  tmp1 <-  dual_collapsedG1_correctedFCs %>% 
+    dplyr::filter(id_rm_row) %>% 
+    dplyr::select(sgRNA_ID, correction) %>%
+    dplyr::mutate(sgRNA_ID_pair = dual_FC$sgRNA_ID_pair[match(sgRNA_ID, dual_FC$sgRNA1_WGE_ID)]) %>%
+    dplyr::select(-sgRNA_ID)
+  
+  tmp2 <-  dual_collapsedG2_correctedFCs %>% 
+    dplyr::filter(id_rm_col) %>% 
+    dplyr::select(sgRNA_ID, correction) %>%
+    dplyr::mutate(sgRNA_ID_pair = dual_FC$sgRNA_ID_pair[match(sgRNA_ID, dual_FC$sgRNA2_WGE_ID)]) %>%
+    dplyr::select(-sgRNA_ID)
+  
+  df_corr <- rbind(df_corr, tmp1, tmp2)
+  
+  dual_FC_correctedFC <- dplyr::left_join(dual_FC, df_corr) %>%
+    dplyr::mutate(correctedFC = avgFC + correction)
+  
+  collapsed_correction <- data.frame(
+    sgRNA_ID = c(dual_collapsedG1_correctedFCs$sgRNA_ID[!id_rm_row], 
+                 dual_collapsedG2_correctedFCs$sgRNA_ID[!id_rm_col]), 
+    collapsed_fitted = matrix_sys %*% correction_pair, 
+    collapsed = correction_vect, 
+    guide_pos = c(rep(1, nrow(dual_collapsedG1_correctedFCs[!id_rm_row, ])), 
+                  rep(2, nrow(dual_collapsedG2_correctedFCs[!id_rm_col, ]))))
+  
+  # plot
+  collapsed_correction$collapsed_fitted <- collapsed_correction$collapsed_fitted/c(dual_collapsedG1_correctedFCs$n[!id_rm_row],  
+                                                         dual_collapsedG2_correctedFCs$n[!id_rm_col])
+  collapsed_correction$collapsed <- collapsed_correction$collapsed/c(dual_collapsedG1_correctedFCs$n[!id_rm_row],  
+                                           dual_collapsedG2_correctedFCs$n[!id_rm_col])
+  collapsed_correction$guide_pos <- factor(collapsed_correction$guide_pos)
+  
+  if (saveToFig) {
+    display <- TRUE
+    file_name_sys <- sprintf("%s%s_solutionSystem.%s", outdir, EXPname, saveFormat)
+    file_name_out <- sprintf("%s%s_FC_vs_correctedFC.%s", outdir, EXPname, saveFormat)
+    file_name_corr <- sprintf("%s%s_corrections_collapsed_vs_pair.%s", outdir, EXPname, saveFormat)
+  }
+  
+  if (display) {
+    
+    pl_sys <- ggplot(collapsed_correction, aes(x = collapsed, 
+                                  y = collapsed_fitted, 
+                                  color = guide_pos)) + 
+      geom_point(alpha = 0.7, size = 2) +
+      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") + 
+      theme_bw() + 
+      theme(legend.position = "right") + 
+      xlab("Collapsed dual correction") + ylab("Fitted correction")
+    print(pl_sys)
+    
+    pl_out <- ggplot(dual_FC_correctedFC, aes(x = avgFC, 
+                                              y = correctedFC)) + 
+      geom_point(alpha = 0.5, size = 1) +
+      geom_abline(slope = 1, intercept = 0, 
+                  linetype = "dashed", color = "red") + 
+      theme_bw() + 
+      theme(legend.position = "right") + 
+      xlab("Uncorrected logFC") + ylab("Corrected logFC")
+    print(pl_out)
+    
+    ### plot collapsed and pairwise correction ###
+    dual_FC_corr_plot <- dual_FC_correctedFC[!is.na(dual_FC_correctedFC$correction), ]
+    dual_FC_corr_plot$correction_collaped_1 <- collapsed_correction$collapsed[match(dual_FC_corr_plot$sgRNA1_WGE_ID, collapsed_correction$sgRNA_ID)]
+    dual_FC_corr_plot$correction_collaped_2 <- collapsed_correction$collapsed[match(dual_FC_corr_plot$sgRNA2_WGE_ID, collapsed_correction$sgRNA_ID)]
+    
+    pl_corr <- ggplot(dual_FC_corr_plot, 
+                      mapping = aes(x = correction_collaped_1, 
+                                    y = correction_collaped_2, 
+                                    color = correction, 
+                                    shape = info)) + 
+      geom_point() + 
+      scale_color_viridis_c() + 
+      theme_bw() + 
+      xlab("Correction collapsed pos 1") + 
+      ylab("Correction collapsed pos 2")
+    print(pl_corr)
+    
+  }
+  
+  if (saveToFig) {
+    ggsave(filename = file_name_sys, plot = pl_sys, width = 4.7, height = 4.5)
+    ggsave(filename = file_name_out, plot = pl_out, width = 4, height = 4)
+    ggsave(filename = file_name_corr, plot = pl_corr, width = 5, height = 4)
+  }
+  
+  return(list(dual_FC = dual_FC_correctedFC, 
+              collpased = collapsed_correction))
+  
+}
+
+#' Title
+#'
+#' plot: distribution before and after based on classes
+#'
+#' @param dual_FC_correctedFC 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.plotClasses <- function(
+  dual_FC_correctedFC, 
+  saveToFig = F, 
+  saveFormat = "pdf",
+  outdir = "./", 
+  EXPname =""
+) {
+  
+  df_plot <- dual_FC_correctedFC %>% dplyr::filter(!is.na(correction))
+  df_plot <- data.frame(avgFC = c(df_plot$avgFC, df_plot$correctedFC), 
+                        type = c(rep("pre-CRISPRCleanR^2", nrow(df_plot)), 
+                                 rep("post-CRISPRCleanR^2", nrow(df_plot))),
+                        info_subtype = rep(df_plot$info_subtype, 2), 
+                        info = rep(df_plot$info, 2))
+  df_plot$type <- factor(df_plot$type, 
+                         levels = c("pre-CRISPRCleanR^2", "post-CRISPRCleanR^2"))
+  
+  pl1 <- ggplot(df_plot, mapping = aes(x = info, y = avgFC, fill = type)) + 
+    geom_boxplot(alpha = 0.7) +
+    geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
+    ylab("logFC") + 
+    theme_bw() + 
+    theme(axis.text = element_text(size = 12), 
+          axis.title.y = element_blank(), 
+          legend.title = element_blank(), 
+          legend.position = "bottom") +
+    scale_fill_brewer(palette = "Paired") +
+    coord_flip() 
+  
+  pl2 <- ggplot(df_plot, mapping = aes(x = avgFC, fill = type)) + 
+    geom_density(alpha = 0.7) +
+    geom_vline(xintercept = 0, color = "red",
+               linetype = "dashed", size = 0.8) +
+    ylab("density") + 
+    theme_classic() + 
+    theme(axis.title.x = element_blank(), 
+          legend.title = element_blank(), 
+          legend.position = "none") +
+    scale_fill_brewer(palette = "Paired")
+  pl <- ggpubr::ggarrange(plotlist = list(pl2, pl1), ncol = 1, 
+                          heights = c(0.2, 1), align = "v")
+  
+  print(pl)
+  
+  if (saveToFig) {
+    file_name <- sprintf("%s%s_PreANDPostFC_vs_Classes.%s", 
+                         outdir, EXPname, saveFormat)
+    ggsave(filename = file_name, plot = pl, width = 6, height = 6)
+  }
+  
+}
+
+#' Title
+#'
+#' plot: distribution with respect to CN
+#'
+#' @param dual_FC_correctedFC 
+#' @param dual_CNA 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#' @param excludeGene 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.plotCNA <- function(
+  dual_FC_correctedFC, 
+  dual_CNA, 
+  saveToFig = FALSE, 
+  saveFormat = "pdf",
+  outdir = "./", 
+  EXPname ="", 
+  excludeGene = NULL
+) {
+  
+  # correction by gene, better use region? otherwise exclude intergenic regions
+  dual_FC_withCNA <- dual_FC_correctedFC %>% 
+    dplyr::filter(Gene1 %in% dual_CNA$gene.symbol | Gene2 %in% dual_CNA$gene.symbol) %>%
+    dplyr::mutate(Gene1_CN = dual_CNA$C[match(Gene1, dual_CNA$gene.symbol)]) %>%
+    dplyr::mutate(Gene2_CN = dual_CNA$C[match(Gene2, dual_CNA$gene.symbol)]) %>%
+    dplyr::mutate(
+      Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
+      Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
+      Prod_CN = Gene1_CN*Gene2_CN, 
+      Sum_CN = Gene1_CN + Gene2_CN) %>%
+    dplyr::filter(!is.na(Prod_CN))
+  dual_FC_withCNA$Max_CN <- mapply(function(x, y) max(x,y), 
+                                   x = dual_FC_withCNA$Gene1_CN, y = dual_FC_withCNA$Gene2_CN, SIMPLIFY = T)
+  
+  dual_FC_withCNA$Gene1_CN <- factor(dual_FC_withCNA$Gene1_CN, 
+                                     levels = sort(unique(dual_FC_withCNA$Gene1_CN)))
+  dual_FC_withCNA$Gene2_CN <- factor(dual_FC_withCNA$Gene2_CN, 
+                                     levels = sort(unique(dual_FC_withCNA$Gene2_CN)))
+  dual_FC_withCNA$Sum_CN <- factor(dual_FC_withCNA$Sum_CN, 
+                                   levels = sort(unique(dual_FC_withCNA$Sum_CN)))
+  dual_FC_withCNA$Prod_CN <- factor(dual_FC_withCNA$Prod_CN, 
+                                    levels = sort(unique(dual_FC_withCNA$Prod_CN)))
+  dual_FC_withCNA$Max_CN  <- factor(dual_FC_withCNA$Max_CN, 
+                                    levels = sort(unique(dual_FC_withCNA$Max_CN)))
+  dual_FC_withCNA <- dual_FC_withCNA[!is.na(dual_FC_withCNA$correction), ]
+  
+  df_plot <- data.frame(info_subtype = rep(dual_FC_withCNA$info_subtype, 2),
+                        logFC = c(dual_FC_withCNA$avgFC, dual_FC_withCNA$correctedFC), 
+                        Sum_CN = rep(dual_FC_withCNA$Sum_CN, 2), 
+                        Gene1_CN = rep(dual_FC_withCNA$Gene1_CN, 2), 
+                        Gene2_CN = rep(dual_FC_withCNA$Gene2_CN, 2), 
+                        Prod_CN = rep(dual_FC_withCNA$Prod_CN, 2), 
+                        Max_CN = rep(dual_FC_withCNA$Max_CN, 2), 
+                        type = c(rep("pre-CRISPRCleanR^2", nrow(dual_FC_withCNA)), 
+                                 rep("post-CRISPRCleanR^2", nrow(dual_FC_withCNA))), 
+                        Gene1 = rep(dual_FC_withCNA$Gene1, 2), 
+                        Gene2 = rep(dual_FC_withCNA$Gene2, 2))
+  df_plot$type <- factor(df_plot$type, 
+                         levels = c("pre-CRISPRCleanR^2", "post-CRISPRCleanR^2"))
+  df_plot$comb_CN <- sprintf("%s ~ %s", df_plot$Gene1_CN, df_plot$Gene2_CN)
+  
+  if (!is.null(excludeGene)) {
+    df_plot <-  df_plot %>% 
+      dplyr::filter(!Gene1 %in% excludeGene, !Gene2 %in% excludeGene)
+    title_plot <- paste("Exclude", paste(excludeGene, collapse = ","))
+    add_to_name <- paste0("_rm", paste(excludeGene, collapse = "_"))
+  } else {
+    title_plot = NULL
+    add_to_name = "" 
+  }
+  
+  pl_CN <- ggplot(df_plot, aes(x = Max_CN, y = logFC, 
+                               fill = type)) + 
+    geom_boxplot() + 
+    # geom_jitter(position = position_jitter(width = 0.05), size = 0.5) +
+    geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
+    theme_bw() + 
+    #stat_summary(fun = mean, geom = "line", aes(group = type), color = "red")  + 
+    #stat_summary(fun = mean, geom = "point", aes(group = type), color = "red") +
+    # geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
+    theme(axis.text = element_text(size = 12),
+          legend.position = "bottom", 
+          axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_brewer(palette = "Paired") +
+    xlab("Max CN guide1 & guide2") + 
+    ylab("logFC") + 
+    ggtitle(title_plot)
+  
+  df_plot$Gene2_CN <- sprintf("CN guide2: %s", df_plot$Gene2_CN)
+  pl_CN_comb <- ggplot(df_plot, aes(x = Gene1_CN, y = logFC, fill = type)) + 
+    geom_boxplot() + 
+    #geom_jitter(position = position_jitter(width = 0.05), size = 0.5)+
+    theme_bw() + 
+    facet_wrap(.~Gene2_CN) +
+    geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
+    theme(axis.text = element_text(size = 12),
+          strip.text = element_text(size = 12),
+          axis.title = element_text(size = 13),
+          legend.position = "bottom", 
+          legend.title = element_blank(), 
+          axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_brewer(palette = "Paired") +
+    xlab("CN guide1") + ylab("logFC") + ggtitle(title_plot)
+  
+  print(pl_CN)
+  print(pl_CN_comb)
+  
+  if (saveToFig) {
+    file_name_sumCN <- sprintf("%s%s_SumCN_vs_FC%s.%s", outdir, EXPname, add_to_name, saveFormat)
+    file_name_combCN <- sprintf("%s%s_CombCN_vs_FC%s.%s", outdir, EXPname, add_to_name, saveFormat)
+    ggsave(filename = file_name_sumCN, plot = pl_CN, width = 6, height = 6)
+    ggsave(filename = file_name_combCN, plot = pl_CN_comb, width = 9, height = 7)
+  }
+  
+}
+
+#' Title
+#'
+#' plot: density divided per max CNA threshold
+#'
+#' @param dual_FC_correctedFC 
+#' @param dual_CNA 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#' @param excludeGene 
+#' @param CN_thr 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.plotCNAdensity <- function(dual_FC_correctedFC, dual_CNA, 
+                                saveToFig = F, 
+                                saveFormat = "pdf",
+                                outdir = "./", EXPname = "", 
+                                excludeGene = NULL, CN_thr) {
+  
+  dual_FC_withCNA <- dual_FC_correctedFC %>% 
+    dplyr::filter(Gene1 %in% dual_CNA$gene.symbol | Gene2 %in% dual_CNA$gene.symbol) %>%
+    dplyr::mutate(Gene1_CN = dual_CNA$C[match(Gene1, dual_CNA$gene.symbol)]) %>%
+    dplyr::mutate(Gene2_CN = dual_CNA$C[match(Gene2, dual_CNA$gene.symbol)]) %>%
+    dplyr::mutate(
+      Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
+      Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
+      Prod_CN = Gene2_CN*Gene1_CN, Sum_CN = Gene1_CN + Gene2_CN, 
+      CN_class = dplyr::case_when(
+        Gene1_CN >= !!(CN_thr) | 
+        Gene2_CN >= !!(CN_thr) ~ sprintf("CN guide1 or guide2 > %i", CN_thr), 
+        TRUE ~ "Others")) %>%
+    dplyr::filter(!is.na(Prod_CN)) %>%
+    dplyr::filter(!is.na(correction))
+
+  df_plot <- data.frame(
+    logFC = c(dual_FC_withCNA$avgFC, dual_FC_withCNA$correctedFC), 
+    CN_class = rep(dual_FC_withCNA$CN_class, 2), 
+    type = c(rep("pre-CRISPRCleanR^2", nrow(dual_FC_withCNA)), 
+             rep("post-CRISPRCleanR^2", nrow(dual_FC_withCNA))), 
+    Gene1 = rep(dual_FC_withCNA$Gene1, 2), 
+    Gene2 = rep(dual_FC_withCNA$Gene2, 2))
+  df_plot$type <- factor(df_plot$type, 
+                         levels = c("pre-CRISPRCleanR^2", "post-CRISPRCleanR^2"))
+  
+  if (!is.null(excludeGene)) {
+    df_plot <-  df_plot %>% 
+      dplyr::filter(!Gene1 %in% excludeGene, !Gene2 %in% excludeGene)
+    title_plot <- paste("Exclude", paste(excludeGene, collapse = ","))
+    add_to_name <- paste0("_rm", paste(excludeGene, collapse = "_"))
+  } else {
+    title_plot = NULL
+    add_to_name = ""
+  }
+  
+  pl <- ggplot(df_plot, aes(x = logFC, fill = CN_class)) + 
+    geom_density(alpha = 0.7) + 
+    theme_bw() + 
+    facet_wrap(.~type, nrow = 2) +
+    geom_vline(xintercept = 0, color = "black", linetype = "dashed", size = 0.8) +
+    theme(axis.text = element_text(size = 12),
+          strip.text = element_text(size = 12),
+          axis.title = element_text(size = 13),
+          legend.position = "bottom", legend.title = element_blank()) +
+    scale_fill_manual(values = c("red", "grey70")) +
+    xlab("logFC") + ggtitle(title_plot)
+  
+  print(pl)
+  
+  if (saveToFig) {
+    file_name <- sprintf("%s%s_densityFC_highCN%s.%s", outdir, EXPname, add_to_name, saveFormat)
+    ggplot2::ggsave(filename =  file_name, plot = pl, width = 6, height = 6)
+  }
+  
+}
+
+#' Title
+#'
+#' plot: before and after correction of matching single dual gene
+#'
+#' @param dual_FC_correctedFC 
+#' @param match_dual_single_seq 
+#' @param single_correctedFCs 
+#' @param dual_CNA 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.plotMatchingSingle <- function(
+  dual_FC_correctedFC,  
+  match_dual_single_seq, 
+  single_correctedFCs, 
+  dual_CNA, 
+  saveToFig = FALSE, 
+  saveFormat = "pdf",
+  outdir = "./", 
+  EXPname = ""
+) {
+  
+  id_corr <- !is.na(dual_FC_correctedFC$correction)
+  unique_ID <- unique(c(dual_FC_correctedFC$sgRNA1_WGE_ID[id_corr], 
+                        dual_FC_correctedFC$sgRNA2_WGE_ID[id_corr]))
+  
+  id_keep <-  match_dual_single_seq$ID_single[match_dual_single_seq$ID %in% unique_ID]
+  single_correctedFCs_filt <- single_correctedFCs[unique(id_keep), ]
+  single_correctedFCs_filt <- single_correctedFCs_filt[!is.na(single_correctedFCs_filt$CHR), ]
+  
+  FC_withCNA <- single_correctedFCs_filt %>% 
+    dplyr::filter(genes %in% dual_CNA$gene.symbol) %>%
+    dplyr::mutate(Gene_CN = dual_CNA$C[match(genes, dual_CNA$gene.symbol)]) %>%
+    dplyr::mutate(Gene_CN = dplyr::case_when(Gene_CN > 9 ~ 8, TRUE ~ round(Gene_CN)))
+  
+  df_plot <- data.frame(
+    logFC = c(FC_withCNA$avgFC, FC_withCNA$correctedFC), 
+    CN = rep(FC_withCNA$Gene_CN, 2), 
+    type = c(rep("pre-CRISPRCleanR^2", nrow(FC_withCNA)), 
+             rep("post-CRISPRCleanR^2", nrow(FC_withCNA))), 
+    Gene = rep(FC_withCNA$genes, 2))
+  df_plot$type <- factor(df_plot$type, 
+                         levels = c("pre-CRISPRCleanR^2", "post-CRISPRCleanR^2"))
+  
+  pl_CN <- ggplot(df_plot, aes(x = as.factor(CN), y = logFC, fill = type)) + 
+    geom_boxplot() +
+    theme_bw() + 
+    # geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
+    theme(axis.text = element_text(size = 12),
+          legend.position = "bottom", 
+          axis.text.x = element_text(angle = 45, hjust = 1)) +
+    scale_fill_brewer(palette = "Paired") +
+    xlab("CN guide") + 
+    ylab("logFC") +
+    ggtitle("Single screen", 
+            subtitle = "guides in common with dual screen") 
+  print(pl_CN)
+  
+  pl_out <- ggplot(FC_withCNA , aes(x = avgFC, y = correctedFC)) + 
+    geom_point(alpha = 0.7, size = 1) +
+    geom_abline(slope = 1, intercept = 0, 
+                linetype = "dashed", color = "red") + 
+    theme_bw() + 
+    theme(legend.position = "right") + 
+    xlab("Uncorrected logFC") + 
+    ylab("Corrected logFC") + 
+    ggtitle("Single screen", 
+            subtitle = "guides in common with dual screen") 
+  print(pl_out)
+  
+  if (saveToFig) {
+    file_name_out <- sprintf("%s%s_singlescreen_FC_vs_correctedFC.%s", 
+                             outdir, EXPname, saveFormat)
+    ggsave(filename = file_name_out, plot = pl_out, width = 4, height = 4)
+    
+    file_name_CN <- sprintf("%s%s_singlescreen_CN_vs_FC.%s", 
+                            outdir, EXPname, saveFormat)
+    ggsave(filename =  file_name_CN, plot = pl_CN, width = 4, height = 4)
+  }
+  
+  return(single_correctedFCs_filt)
+}
+
+
+#' Title
+#'
+#' @param filename_single 
+#' @param min_reads_single 
+#' @param EXPname 
+#' @param libraryAnnotation_single 
+#' @param display 
+#' @param outdir 
+#' @param min_reads 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param libraryAnnotation_dual 
+#' @param dual_count 
+#' @param correctGW 
+#' @param excludeGene_plot 
+#' @param dual_CNA 
+#' @param CN_thr 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.run_complete <- function(
+  filename_single, 
+  min_reads_single = 30,
+  EXPname,
+  libraryAnnotation_single,  
+  display = FALSE, 
+  outdir = "./", 
+  min_reads = 30, 
+  saveToFig, 
+  saveFormat = "pdf", 
+  libraryAnnotation_dual, 
+  dual_count, 
+  correctGW, 
+  excludeGene_plot = NULL, 
+  dual_CNA, 
+  CN_thr = 8
+) {
+  
+  #################################
+  ### get single screens output ###
+  
+  single_screen <- ccr.run_complete(
+    filename_single = filename_single, 
+    min_reads_single = min_reads_single,
+    EXPname = EXPname, 
+    libraryAnnotation_single = libraryAnnotation_single, 
+    display = display, 
+    outdir = outdir)
+  
+  single_correctedFCs <- single_screen$FC
+  libraryAnnotation_single <- single_screen$library
+  
+  print("Processed single screen")
+  
+  #########################################################
+  ### match single and dual libraries based on sequence ###
+  library_matched_seq <- ccr2.matchDualandSingleSeq(
+    dual_library = libraryAnnotation_dual, 
+    single_library = libraryAnnotation_single)
+  
+  print("Matched single and dual libraries")
+  
+  ###############################      
+  ### get dual screen output ###
+  dual_FC <- ccr2.NormfoldChanges(
+    Dframe = dual_count, 
+    min_reads = min_reads)
+  
+  dual_FC <- ccr2.logFCs2chromPos(
+    dual_FC = dual_FC, 
+    dual_library = libraryAnnotation_dual)
+  
+  # collapse to single info, add single logFC results baesd on sequence matching
+  dual_FC_collpased <- ccr2.avgSingleGuides_combine(
+    dual_FC = dual_FC, 
+    single_FC = single_correctedFCs, 
+    match_dual_single_seq = library_matched_seq, 
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname)
+  
+  print("Collpased dual screen")
+  
+  ##########################################################
+  ### create model to convert single to multiple screens ###
+  dataInjection_guide1 <- ccr2.modelSingleVSCombined(
+    dual_collapsed = dual_FC_collpased$sgRNA1, 
+    single_FC = single_correctedFCs, 
+    guide_id = 1, 
+    display = display, 
+    correctGW = correctGW, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname)
+  
+  dataInjection_guide2 <- ccr2.modelSingleVSCombined(
+    dual_collapsed = dual_FC_collpased$sgRNA2, 
+    single_FC = single_correctedFCs, 
+    guide_id = 2, 
+    display = display, 
+    correctGW = correctGW, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname)
+  
+  print("Converted FCs GW single to GW dual collapsed")
+  
+  ##########################################
+  ### apply CRISPRCleanR to single lines ###
+  dataInjection_guide1_correctedFCs <- ccr.GWclean(
+    dataInjection_guide1$predict_single,
+    display = display, 
+    label = sprintf("guide1_%s", EXPname), 
+    saveTO = outdir)
+  
+  
+  dataInjection_guide2_correctedFCs <- ccr.GWclean(
+    dataInjection_guide2$predict_single,
+    display = display, 
+    label = sprintf("guide2_%s", EXPname), 
+    saveTO = outdir)
+  
+  # consider only guides in dual screen
+  dual_collapsedG1_correctedFCs <- ccr2.filterGWclean(
+    dataInjection_correctedFCs = dataInjection_guide1_correctedFCs$corrected_logFCs,
+    dual_collapsed = dual_FC_collpased$sgRNA1,
+    guide_id = 1, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname,
+    display = display)
+  
+  dual_collapsedG2_correctedFCs <- ccr2.filterGWclean(
+    dataInjection_correctedFCs = dataInjection_guide2_correctedFCs$corrected_logFCs,
+    dual_collapsed = dual_FC_collpased$sgRNA2, 
+    guide_id = 2, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname,
+    display = display)
+  
+  print("CRISPRCleanR applied to GW dual collpased")
+  
+  ##################################################
+  ### solve linear system to get pair correction ###
+  sys_solution <- ccr2.solveLinearSys(
+    dual_FC = dual_FC, 
+    dual_collapsedG1_correctedFCs = dual_collapsedG1_correctedFCs, 
+    dual_collapsedG2_correctedFCs = dual_collapsedG2_correctedFCs, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname,
+    display = display)
+  print("System solved, collpased correction converted to pairwise correction")
+  
+  collapsed_correction <- sys_solution$collpased
+  dual_FC_correctedFC <- sys_solution$dual_FC
+  
+  ########################
+  ### visualize output ###
+  # divide by class
+  ccr2.plotClasses(
+    dual_FC_correctedFC = dual_FC_correctedFC,
+    EXPname = EXPname, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir)
+  
+  # distribution wrt CN
+  ccr2.plotCNA(
+    dual_FC_correctedFC = dual_FC_correctedFC, 
+    dual_CNA = dual_CNA, 
+    EXPname = EXPname, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir)
+  
+  # density distribution for CN > 8 for any guide1 or guide2
+  ccr2.plotCNAdensity(
+    dual_FC_correctedFC = dual_FC_correctedFC, 
+    dual_CNA = dual_CNA, 
+    CN_thr = CN_thr,  
+    EXPname = EXPname, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir)
+  
+  
+  if (!is.null(excludeGene_plot)) {
+    # exclude pairs including a gene
+    ccr2.plotCNA(dual_FC_correctedFC = dual_FC_correctedFC, 
+                 dual_CNA = dual_CNA, 
+                 excludeGene = excludeGene_plot,  
+                 EXPname = EXPname, 
+                 saveToFig = saveToFig,
+                 saveFormat = saveFormat,
+                 outdir = outdir)
+    
+    ccr2.plotCNAdensity(dual_FC_correctedFC = dual_FC_correctedFC, 
+                        dual_CNA = dual_CNA, excludeGene = excludeGene_plot, 
+                        CN_thr = CN_thr, 
+                        EXPname = EXPname, 
+                        saveToFig = saveToFig, 
+                        saveFormat = saveFormat,
+                        outdir = outdir)
+  }
+  
+  
+  # compare with correction on single genes
+  single_correctedFCs_filt <- ccr2.plotMatchingSingle(
+    dual_FC_correctedFC = dual_FC_correctedFC, 
+    match_dual_single_seq = library_matched_seq, 
+    single_correctedFCs = single_correctedFCs, 
+    dual_CNA = dual_CNA,  
+    EXPname = EXPname, 
+    saveToFig = saveToFig, 
+    saveFormat = saveFormat,
+    outdir = outdir)
+  
+  
+  return(list(dual = dual_FC_correctedFC, 
+              single = single_correctedFCs_filt,
+              system_solition = collapsed_correction))
+  
+}
+
