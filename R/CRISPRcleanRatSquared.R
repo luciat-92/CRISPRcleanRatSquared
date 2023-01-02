@@ -914,6 +914,47 @@ ccr2.plotClasses <- function(
 
 #' Title
 #'
+#' combine copy number info with dual FC data.frame
+#'
+#' @param CNA 
+#' @param dual_FC 
+#'
+#' @return
+#'
+ccr2.add_CNA <- function(CNA, dual_FC) { 
+
+  dual_FC_withCNA <- dual_FC %>% 
+    dplyr::filter(Gene1 %in% CNA$gene.symbol | Gene2 %in% CNA$gene.symbol) %>%
+    dplyr::mutate(Gene1_CN = CNA$C[match(Gene1, CNA$gene.symbol)]) %>%
+    dplyr::mutate(Gene2_CN = CNA$C[match(Gene2, CNA$gene.symbol)]) %>%
+    dplyr::mutate(
+      Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
+      Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
+      Prod_CN = Gene1_CN*Gene2_CN, 
+      Sum_CN = Gene1_CN + Gene2_CN) %>%
+    dplyr::filter(!is.na(Prod_CN))
+  dual_FC_withCNA$Max_CN <- mapply(function(x, y) max(x,y), 
+                                   x = dual_FC_withCNA$Gene1_CN, 
+                                   y = dual_FC_withCNA$Gene2_CN, SIMPLIFY = T)
+  
+  dual_FC_withCNA$Gene1_CN <- factor(dual_FC_withCNA$Gene1_CN, 
+                                     levels = sort(unique(dual_FC_withCNA$Gene1_CN)))
+  dual_FC_withCNA$Gene2_CN <- factor(dual_FC_withCNA$Gene2_CN, 
+                                     levels = sort(unique(dual_FC_withCNA$Gene2_CN)))
+  dual_FC_withCNA$Sum_CN <- factor(dual_FC_withCNA$Sum_CN, 
+                                   levels = sort(unique(dual_FC_withCNA$Sum_CN)))
+  dual_FC_withCNA$Prod_CN <- factor(dual_FC_withCNA$Prod_CN, 
+                                    levels = sort(unique(dual_FC_withCNA$Prod_CN)))
+  dual_FC_withCNA$Max_CN  <- factor(dual_FC_withCNA$Max_CN, 
+                                    levels = sort(unique(dual_FC_withCNA$Max_CN)))  
+  
+  return(dual_FC_withCNA)
+  
+}
+
+
+#' Title
+#'
 #' plot: distribution with respect to CN
 #'
 #' @param dual_FC_correctedFC 
@@ -938,32 +979,9 @@ ccr2.plotCNA <- function(
   excludeGene = NULL
 ) {
   
-  # correction by gene, better use region? otherwise exclude intergenic regions
-  dual_FC_withCNA <- dual_FC_correctedFC %>% 
-    dplyr::filter(Gene1 %in% dual_CNA$gene.symbol | Gene2 %in% dual_CNA$gene.symbol) %>%
-    dplyr::mutate(Gene1_CN = dual_CNA$C[match(Gene1, dual_CNA$gene.symbol)]) %>%
-    dplyr::mutate(Gene2_CN = dual_CNA$C[match(Gene2, dual_CNA$gene.symbol)]) %>%
-    dplyr::mutate(
-      Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
-      Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
-      Prod_CN = Gene1_CN*Gene2_CN, 
-      Sum_CN = Gene1_CN + Gene2_CN) %>%
-    dplyr::filter(!is.na(Prod_CN))
-  dual_FC_withCNA$Max_CN <- mapply(function(x, y) max(x,y), 
-                                   x = dual_FC_withCNA$Gene1_CN, y = dual_FC_withCNA$Gene2_CN, SIMPLIFY = T)
-  
-  dual_FC_withCNA$Gene1_CN <- factor(dual_FC_withCNA$Gene1_CN, 
-                                     levels = sort(unique(dual_FC_withCNA$Gene1_CN)))
-  dual_FC_withCNA$Gene2_CN <- factor(dual_FC_withCNA$Gene2_CN, 
-                                     levels = sort(unique(dual_FC_withCNA$Gene2_CN)))
-  dual_FC_withCNA$Sum_CN <- factor(dual_FC_withCNA$Sum_CN, 
-                                   levels = sort(unique(dual_FC_withCNA$Sum_CN)))
-  dual_FC_withCNA$Prod_CN <- factor(dual_FC_withCNA$Prod_CN, 
-                                    levels = sort(unique(dual_FC_withCNA$Prod_CN)))
-  dual_FC_withCNA$Max_CN  <- factor(dual_FC_withCNA$Max_CN, 
-                                    levels = sort(unique(dual_FC_withCNA$Max_CN)))
-  dual_FC_withCNA <- dual_FC_withCNA[!is.na(dual_FC_withCNA$correction), ]
-  
+  dual_FC_withCNA <- ccr2.add_CNA(CNA = dual_CNA, dual_FC = dual_FC_correctedFC) %>%
+    dplyr::filter(!is.na(correction))
+ 
   df_plot <- data.frame(info_subtype = rep(dual_FC_withCNA$info_subtype, 2),
                         logFC = c(dual_FC_withCNA$avgFC, dual_FC_withCNA$correctedFC), 
                         Sum_CN = rep(dual_FC_withCNA$Sum_CN, 2), 
@@ -1051,26 +1069,23 @@ ccr2.plotCNA <- function(
 #' @export
 #'
 #' @examples
-ccr2.plotCNAdensity <- function(dual_FC_correctedFC, dual_CNA, 
-                                saveToFig = F, 
-                                saveFormat = "pdf",
-                                outdir = "./", EXPname = "", 
-                                excludeGene = NULL, CN_thr) {
+ccr2.plotCNAdensity <- function(
+  dual_FC_correctedFC, 
+  dual_CNA, 
+  saveToFig = F, 
+  saveFormat = "pdf",
+  outdir = "./", 
+  EXPname = "", 
+  excludeGene = NULL, 
+  CN_thr) {
   
-  dual_FC_withCNA <- dual_FC_correctedFC %>% 
-    dplyr::filter(Gene1 %in% dual_CNA$gene.symbol | Gene2 %in% dual_CNA$gene.symbol) %>%
-    dplyr::mutate(Gene1_CN = dual_CNA$C[match(Gene1, dual_CNA$gene.symbol)]) %>%
-    dplyr::mutate(Gene2_CN = dual_CNA$C[match(Gene2, dual_CNA$gene.symbol)]) %>%
-    dplyr::mutate(
-      Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
-      Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
-      Prod_CN = Gene2_CN*Gene1_CN, Sum_CN = Gene1_CN + Gene2_CN, 
-      CN_class = dplyr::case_when(
-        Gene1_CN >= !!(CN_thr) | 
-        Gene2_CN >= !!(CN_thr) ~ sprintf("CN guide1 or guide2 > %i", CN_thr), 
-        TRUE ~ "Others")) %>%
-    dplyr::filter(!is.na(Prod_CN)) %>%
-    dplyr::filter(!is.na(correction))
+  dual_FC_withCNA <- ccr2.add_CNA(CNA = dual_CNA, dual_FC = dual_FC_correctedFC) %>%
+    dplyr::filter(!is.na(correction)) %>%
+    dplyr::mutate(CN_class = dplyr::case_when(
+      as.numeric(as.character(Gene1_CN)) >= !!(CN_thr) | 
+      as.numeric(as.character(Gene2_CN)) >= !!(CN_thr) ~ 
+        sprintf("CN guide1 or guide2 > %i", CN_thr), 
+      TRUE ~ "Others"))
 
   df_plot <- data.frame(
     logFC = c(dual_FC_withCNA$avgFC, dual_FC_withCNA$correctedFC), 
