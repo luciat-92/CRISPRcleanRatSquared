@@ -42,6 +42,8 @@ get_input_data <- function(param_file) {
   
   for (idx_file in seq_len(n_files)) {
     
+    print(sprintf("############ load file n. %i ############", idx_file))
+    
     dual_count_list[[idx_file]] <- dual_count_list[[idx_file]] %>%
       dplyr::mutate(ID = paste0(ID, "_lib", idx_file))
     
@@ -55,6 +57,7 @@ get_input_data <- function(param_file) {
     
     id_change <- grep("CTRL", dual_library_list[[idx_file]]$sgRNA1_WGE_ID)
     if (length(id_change) > 0) {
+      print(sprintf("change CTRL to NONTARGET in position 1 for %i pairs", length(id_change)))
       dual_library_list[[idx_file]]$sgRNA1_WGE_ID[id_change] <- str_replace(
         string =  dual_library_list[[idx_file]]$sgRNA1_WGE_ID[id_change], 
         pattern = "CTRL", 
@@ -63,6 +66,7 @@ get_input_data <- function(param_file) {
     
     id_change <- grep("CTRL", dual_library_list[[idx_file]]$sgRNA2_WGE_ID)
     if (length(id_change) > 0) {
+      print(sprintf("change CTRL to NONTARGET in position 2 for %i pairs", length(id_change)))
       dual_library_list[[idx_file]]$sgRNA2_WGE_ID[id_change] <- str_replace(
         string =  dual_library_list[[idx_file]]$sgRNA2_WGE_ID[id_change], 
         pattern = "CTRL", 
@@ -71,15 +75,91 @@ get_input_data <- function(param_file) {
     
     id_nontarget <- grep("NONTARGET", dual_count_list[[idx_file]]$Gene1)
     if (length(id_nontarget) > 0) {
+      print(sprintf("assign missing sgRNA1_ID for %i NONTARGET pairs", length(id_nontarget)))
       dual_count_list[[idx_file]]$sgRNA1_ID[id_nontarget] <- dual_count_list[[idx_file]]$Gene1[id_nontarget]
       dual_library_list[[idx_file]]$sgRNA1_WGE_ID[id_nontarget] <- dual_count_list[[idx_file]]$Gene1[id_nontarget]
     }
     
     id_nontarget <- grep("NONTARGET", dual_count_list[[idx_file]]$Gene2)
     if (length(id_nontarget) > 0) {
+      print(sprintf("assign missing sgRNA2_ID for %i NONTARGET pairs", length(id_nontarget)))
       dual_count_list[[idx_file]]$sgRNA2_ID[id_nontarget] <- dual_count_list[[idx_file]]$Gene2[id_nontarget]
       dual_library_list[[idx_file]]$sgRNA2_WGE_ID[id_nontarget] <- dual_count_list[[idx_file]]$Gene2[id_nontarget]
     }
+    
+    # if NA in count ID, use gene ID
+    id_na <- which(is.na(dual_count_list[[idx_file]]$sgRNA1_ID))
+    if (length(id_na) > 0) {
+      print(sprintf("assign missing sgRNA1_ID for %i pairs", length(id_na)))
+      dual_count_list[[idx_file]]$sgRNA1_ID[id_na] <- dual_count_list[[idx_file]]$Gene1[id_na]
+      dual_library_list[[idx_file]]$sgRNA1_WGE_ID[id_na] <- dual_count_list[[idx_file]]$Gene1[id_na]
+      dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol[id_na] <- dual_count_list[[idx_file]]$Gene1[id_na]
+    }
+    
+    id_na <- which(is.na(dual_count_list[[idx_file]]$sgRNA2_ID))
+    if (length(id_na) > 0) {
+      print(sprintf("assign missing sgRNA2_ID for %i pairs", length(id_na)))
+      dual_count_list[[idx_file]]$sgRNA2_ID[id_na] <- dual_count_list[[idx_file]]$Gene2[id_na]
+      dual_library_list[[idx_file]]$sgRNA2_WGE_ID[id_na] <- dual_count_list[[idx_file]]$Gene2[id_na]
+      dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol[id_na] <- dual_count_list[[idx_file]]$Gene2[id_na]
+    }
+    
+    id_na_lib <- which(is.na(dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol  ))
+    if (length(id_na_lib) > 0) {
+      print(sprintf("assign missing Gene1 name in library for %i pairs", length(id_na_lib)))
+      dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol[id_na_lib] <- dual_count_list[[idx_file]]$Gene1[id_na_lib]
+    }
+    
+    id_na_lib <- which(is.na(dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol  ))
+    if (length(id_na_lib) > 0) {
+      print(sprintf("assign missing Gene2 name in library for %i pairs", length(id_na_lib)))
+      dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol[id_na_lib] <- dual_count_list[[idx_file]]$Gene2[id_na_lib]
+    }
+    
+    # same sequence with multiple ID, replace
+    dual_library_seq <- data.frame(
+      GI_ID = rep(dual_library_list[[idx_file]]$ID, 2),
+      GENES = c(dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol, dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol), 
+      ID = c(dual_library_list[[idx_file]]$sgRNA1_WGE_ID, dual_library_list[[idx_file]]$sgRNA2_WGE_ID), 
+      LIBRARY = c(dual_library_list[[idx_file]]$sgRNA1_Library, dual_library_list[[idx_file]]$sgRNA2_Library), 
+      SEQ = c(dual_library_list[[idx_file]]$sgRNA1_WGE_Sequence, dual_library_list[[idx_file]]$sgRNA2_WGE_Sequence)
+    )
+    
+    multiple_ID <- dual_library_seq %>% 
+      dplyr::group_by(SEQ) %>%
+      dplyr::summarise(
+        n_ID = length(unique(ID)),
+        ID_all = paste0(sort(unique(ID)), collapse = ","), 
+        n_gene = length(unique(GENES)),
+        gene_all = paste0(sort(unique(GENES)), collapse = ",")) %>%
+      dplyr::filter(n_gene > 1)
+    
+    if (nrow(multiple_ID) > 0) {
+      
+      print(sprintf("reassign %i sgRNA1 or sgRNA2 with multiple genes/IDs but same SEQ", 
+                    nrow(multiple_ID)))
+      
+      for (idx in seq_len(nrow(multiple_ID))) {
+        
+        # sgRNA1
+        id_match <- which(dual_library_list[[idx_file]]$sgRNA1_WGE_Sequence == multiple_ID$SEQ[idx])
+        if (length(id_match) > 0) {
+          dual_library_list[[idx_file]]$sgRNA1_WGE_ID[id_match] <- multiple_ID$ID_all[idx]   
+          dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol[id_match] <- multiple_ID$gene_all[idx] 
+          dual_count_list[[idx_file]]$sgRNA1_ID[id_match] <- multiple_ID$ID_all[idx]   
+          dual_count_list[[idx_file]]$Gene1[id_match] <- multiple_ID$gene_all[idx] 
+        }
+        # sgRNA2
+        id_match <- which(dual_library_list[[idx_file]]$sgRNA2_WGE_Sequence == multiple_ID$SEQ[idx])
+        if (length(id_match) > 0) {
+          dual_library_list[[idx_file]]$sgRNA2_WGE_ID[id_match] <- multiple_ID$ID_all[idx]   
+          dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol[id_match] <- multiple_ID$gene_all[idx] 
+          dual_count_list[[idx_file]]$sgRNA2_ID[id_match] <- multiple_ID$ID_all[idx]   
+          dual_count_list[[idx_file]]$Gene2[id_match] <- multiple_ID$gene_all[idx]   
+        }
+      }
+    }
+    
     
     dual_library_list[[idx_file]] <- dual_library_list[[idx_file]] %>% 
       dplyr::mutate(COMB_ID =  paste(sgRNA1_WGE_Sequence, sgRNA2_WGE_Sequence, sep = "_"))
@@ -146,7 +226,6 @@ ccr.run_complete <- function(
                                                            rownames(libraryAnnotation_single))])
   # get CRISPRCleanR single correction
   single_correctedFCs <- ccr.GWclean(gwSortedFCs,
-                                     saveTO = outdir, 
                                      display = display,
                                      label = sprintf("single_%s", EXPname)) 
   
@@ -295,14 +374,14 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
     dplyr::filter(!duplicated(SEQ)) %>%
     dplyr::mutate(ID_single = NA, SEQ_single = NA)
   # filter(!duplicated(ID), LIBRARY == single_library_name) # from input consider all the libraries
-  
+
   single_library_seq <- data.frame(
     GENES = single_library$GENES, 
     ID = rownames(single_library),
     SEQ = single_library$seq
     )
   
-  # filter for genes and non-targeting
+  # filter for genes and non-targeting (allows to reduce computational time!)
   single_library_seq <- single_library_seq %>%
     dplyr::filter(!duplicated(SEQ), 
                   GENES %in% dual_library_seq$GENES | GENES == "NON-TARGETING")
@@ -321,10 +400,10 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   
   if (all(single_nchar <= dual_nchar)) {
     
-    match_id_dual  <-  lapply(single_library_seq$SEQ, function(x) 
+    match_id_dual <- lapply(single_library_seq$SEQ, function(x) 
       grep(pattern = x, x = dual_library_seq$SEQ))
     len_match <- sapply(match_id_dual, length)
-    to_keep <- which(len_match == 1) # keep onle guides with a unique association
+    to_keep <- which(len_match == 1) # keep only guides with a unique association
     match_id_dual <- unlist(match_id_dual[to_keep])
     
     dual_library_seq$ID_single[match_id_dual] <- single_library_seq$ID[to_keep]
@@ -386,18 +465,24 @@ ccr2.NormfoldChanges <- function(
         is.na(sgRNA1_ID) & is.na(sgRNA2_ID) ~ paste(Gene1, Gene2, sep = "_")))
   counts <- counts[id_keep, ]
   
-  norm_fact <- t(matrix(rep(colSums(counts), nrow(counts)), 
+  norm_fact_vector <- colSums(counts)
+  norm_fact <- t(matrix(rep( norm_fact_vector, nrow(counts)), 
                         ncol(counts), nrow(counts)))
   norm_counts <- counts/norm_fact*10000000
   
+  name_control <- colnames(norm_counts)[1]
   norm_controls <- norm_counts[, 1]
   norm_counts <- norm_counts[, -1]
   
   log_fc <- apply(norm_counts, 2, function(x) log2((x + 0.5)/(norm_controls + 0.5)))
   colnames(log_fc) <- paste(colnames(log_fc), "logFC", sep = "_")
   log_fc <- cbind(info, log_fc)
+  norm_counts <- cbind(info, norm_controls , norm_counts)
+  colnames(norm_counts)[ncol(info) + 1] <- name_control
   
-  return(log_fc)
+  return(list(logFCs = log_fc, 
+              norm_counts = norm_counts, 
+              factor = norm_fact_vector))
 }
 
 #' Title
@@ -1447,7 +1532,7 @@ ccr2.run_complete <- function(
     min_reads = min_reads)
   
   dual_FC <- ccr2.logFCs2chromPos(
-    dual_FC = dual_FC, 
+    dual_FC = dual_FC$logFCs, 
     dual_library = libraryAnnotation_dual)
   
   # collapse to single info, add single logFC results baesd on sequence matching
