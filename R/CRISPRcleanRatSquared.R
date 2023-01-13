@@ -1672,10 +1672,12 @@ ccr2.plot_correction <- function(df,
   
   # plot synergy before and after correction:
   pl <- ggplot(df, aes(x = bliss_zscore, 
-                       y = bliss_zscore_corrected)) + 
-    geom_point(alpha = 0.5, size = 1) +
+                       y = bliss_zscore_corrected, 
+                       color = info_subtype)) + 
     geom_abline(slope = 1, intercept = 0, 
-                linetype = "dashed", color = "red") + 
+                linetype = "dashed", color = "black") + 
+    geom_point(alpha = 0.5, size = 1) +
+    scale_color_brewer(palette = "Set3" ) +
     theme_bw() + 
     theme(legend.position = "right") + 
     xlab("Uncorrected Bliss z-score") + 
@@ -1685,7 +1687,7 @@ ccr2.plot_correction <- function(df,
   if (saveToFig) {
     file_name <- sprintf("%s%s_bliss_original_vs_corrected.%s", 
                              outdir, EXPname, saveFormat)
-    ggsave(filename = file_name, plot = pl, width = 4.5, height = 4)
+    ggsave(filename = file_name, plot = pl, width = 6, height = 4)
   }
   
 }
