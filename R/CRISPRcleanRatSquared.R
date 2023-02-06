@@ -119,14 +119,25 @@ get_input_data <- function(param_file) {
     # same sequence with multiple ID, replace
     dual_library_seq <- data.frame(
       GI_ID = rep(dual_library_list[[idx_file]]$ID, 2),
-      GENES = c(dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol, dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol), 
-      ID = c(dual_library_list[[idx_file]]$sgRNA1_WGE_ID, dual_library_list[[idx_file]]$sgRNA2_WGE_ID), 
-      LIBRARY = c(dual_library_list[[idx_file]]$sgRNA1_Library, dual_library_list[[idx_file]]$sgRNA2_Library), 
-      SEQ = c(dual_library_list[[idx_file]]$sgRNA1_WGE_Sequence, dual_library_list[[idx_file]]$sgRNA2_WGE_Sequence)
-    )
+      ID = c(dual_library_list[[idx_file]]$sgRNA1_WGE_ID, 
+             dual_library_list[[idx_file]]$sgRNA2_WGE_ID), 
+      GENES = c(dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol, 
+                dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol), 
+      CHR = c(dual_library_list[[idx_file]]$sgRNA1_Chr, 
+                dual_library_list[[idx_file]]$sgRNA2_Chr), 
+      START = c(dual_library_list[[idx_file]]$sgRNA1_Start, 
+                dual_library_list[[idx_file]]$sgRNA2_Start), 
+      END = c(dual_library_list[[idx_file]]$sgRNA1_End, 
+                dual_library_list[[idx_file]]$sgRNA2_End), 
+      LIBRARY = c(dual_library_list[[idx_file]]$sgRNA1_Library, 
+                  dual_library_list[[idx_file]]$sgRNA2_Library), 
+      SEQ = c(dual_library_list[[idx_file]]$sgRNA1_WGE_Sequence, 
+              dual_library_list[[idx_file]]$sgRNA2_WGE_Sequence)
+    ) %>%
+      dplyr::mutate(CHR_START_END_SEQ = paste(CHR, START, END, SEQ, sep = "_"))
     
     multiple_ID <- dual_library_seq %>% 
-      dplyr::group_by(SEQ) %>%
+      dplyr::group_by(CHR_START_END_SEQ) %>%
       dplyr::summarise(
         n_ID = length(unique(ID)),
         ID_all = paste0(sort(unique(ID)), collapse = ","), 
@@ -136,7 +147,7 @@ get_input_data <- function(param_file) {
     
     if (nrow(multiple_ID) > 0) {
       
-      print(sprintf("reassign %i sgRNA1 or sgRNA2 with multiple genes/IDs but same SEQ", 
+      print(sprintf("reassign %i sgRNA1 or sgRNA2 with multiple genes/IDs but same CHR_START_END_SEQ", 
                     nrow(multiple_ID)))
       
       for (idx in seq_len(nrow(multiple_ID))) {
@@ -503,33 +514,47 @@ ccr2.compute_bliss <- function(dual_FC,
 #' @examples
 ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   
+  #### add optional info on how to match (start - end trim), 
+  #### if this info is not available search for perfect match 1 to 1
+  #### search for matching SEQ and make sure gene and chr name is the same
+  
   dual_library_seq <- data.frame(
-    GENES = c(dual_library$sgRNA1_Approved_Symbol, dual_library$sgRNA2_Approved_Symbol), 
-    ID = c(dual_library$sgRNA1_WGE_ID, dual_library$sgRNA2_WGE_ID), 
-    LIBRARY = c(dual_library$sgRNA1_Library, dual_library$sgRNA2_Library), 
-    SEQ = c(dual_library$sgRNA1_WGE_Sequence, dual_library$sgRNA2_WGE_Sequence)
-    )
+    CHR = c(dual_library$sgRNA1_Chr, 
+            dual_library$sgRNA2_Chr), 
+    GENES = c(dual_library$sgRNA1_Approved_Symbol, 
+              dual_library$sgRNA2_Approved_Symbol), 
+    ID = c(dual_library$sgRNA1_WGE_ID, 
+           dual_library$sgRNA2_WGE_ID), 
+    LIBRARY = c(dual_library$sgRNA1_Library, 
+                dual_library$sgRNA2_Library), 
+    SEQ = c(dual_library$sgRNA1_WGE_Sequence, 
+            dual_library$sgRNA2_WGE_Sequence)
+    ) %>%
+    dplyr::mutate(CHR_GENES_SEQ = paste(CHR, GENES, SEQ, sep = "_"))
   
   dual_library_seq <- dual_library_seq %>% 
-    dplyr::filter(!duplicated(SEQ)) %>%
+    dplyr::filter(!duplicated(CHR_GENES_SEQ)) %>%
     dplyr::mutate(ID_single = NA, SEQ_single = NA)
   # filter(!duplicated(ID), LIBRARY == single_library_name) # from input consider all the libraries
 
   single_library_seq <- data.frame(
+    CHR = single_library$CHRM,
     GENES = single_library$GENES, 
     ID = rownames(single_library),
     SEQ = single_library$seq
-    )
+    )  %>%
+    dplyr::mutate(CHR_GENES_SEQ = paste(CHR, GENES, SEQ, sep = "_"))
   
   # filter for genes and non-targeting (allows to reduce computational time!)
   single_library_seq <- single_library_seq %>%
-    dplyr::filter(!duplicated(SEQ), 
+    dplyr::filter(!duplicated(CHR_GENES_SEQ), 
                   GENES %in% dual_library_seq$GENES | GENES == "NON-TARGETING")
   
   #dual_library_seq <- dual_library_seq %>%
   #    filter(GENES %in% single_library_seq$GENES | is.na(GENES))
   
-  # NOTE: RACK1, MARCHF5 and INTS6L removed because they have another name in single, how to solve?
+  # NOTE: RACK1, MARCHF5 and INTS6L removed because they have another name in single,
+  # how to solve?
   
   single_nchar <- unique(nchar(single_library_seq$SEQ))
   dual_nchar <- unique(nchar(dual_library_seq$SEQ))
