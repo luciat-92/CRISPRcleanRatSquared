@@ -240,14 +240,33 @@ ccr.run_complete <- function(
                                      display = display,
                                      label = sprintf("single_%s", EXPname)) 
   
-  single_correctedFCs <- single_correctedFCs$corrected_logFCs %>% 
+  single_correctedFCs$corrected_logFCs <- single_correctedFCs$corrected_logFCs %>% 
     dplyr::mutate(correction = correctedFC - avgFC)
   
+  # save segments
+  single_ccr_segments <- single_correctedFCs$segments
+  # add mean and sd
+  guideIdx_s_e <- lapply(single_ccr_segments$guideIdx, function(x) 
+    as.numeric(str_trim(str_split_1(x, pattern = ","))))
+  
+  # NOTE: cannot use avg.logFC (from segment), 
+  # mean_logFC correspond to ccr correction
+  # TODO: remove avg.logFC
+  single_ccr_segments$mean_logFC <- sapply(guideIdx_s_e, function(x) 
+    mean(single_correctedFCs$corrected_logFCs$avgFC[x[1]:x[2]]))
+  
+  single_ccr_segments$sd_logFC <- sapply(guideIdx_s_e, function(x) 
+    sd(single_correctedFCs$corrected_logFCs$avgFC[x[1]:x[2]]))
+  
+  # update library with match
+  single_correctedFCs <- single_correctedFCs$corrected_logFCs 
   libraryAnnotation_single <- libraryAnnotation_single %>% 
     dplyr::filter(CODE %in% rownames(single_correctedFCs)) 
+  libraryAnnotation_single <- libraryAnnotation_single[rownames(single_correctedFCs),]
   
   return(list(
     FC = single_correctedFCs, 
+    segment = single_ccr_segments, 
     library = libraryAnnotation_single
     ))
   
@@ -556,15 +575,48 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   # NOTE: RACK1, MARCHF5 and INTS6L removed because they have another name in single,
   # how to solve?
   
-  single_nchar <- unique(nchar(single_library_seq$SEQ))
-  dual_nchar <- unique(nchar(dual_library_seq$SEQ))
+  single_nchar <- sort(unique(nchar(single_library_seq$SEQ)))
+  dual_nchar <- sort(unique(nchar(dual_library_seq$SEQ)))
   
-  if (length(single_nchar) > 1) {
-    stop("single screen library MUST have the same length for each guide")
+  if (length(single_nchar) > 1 & !identical(single_nchar, dual_nchar)) {
+    stop("single screen library MUST have the same length for each guide\n
+         or have the same options as dual screen library ")
   }
   
-  if (all(single_nchar <= dual_nchar)) {
+  if (length(single_nchar) == 1) {
+    if (all(single_nchar <= dual_nchar)) {
+      
+      match_id_dual <- lapply(single_library_seq$SEQ, function(x) 
+        grep(pattern = x, x = dual_library_seq$SEQ))
+      len_match <- sapply(match_id_dual, length)
+      to_keep <- which(len_match == 1) # keep only guides with a unique association
+      match_id_dual <- unlist(match_id_dual[to_keep])
+      
+      dual_library_seq$ID_single[match_id_dual] <- single_library_seq$ID[to_keep]
+      dual_library_seq$SEQ_single[match_id_dual] <- single_library_seq$SEQ[to_keep]
+      
+    } else {
+      
+      if (all(dual_nchar <= single_nchar)) {
+        
+        match_id_single  <-  lapply(dual_library_seq$SEQ, function(x) 
+          grep(pattern = x, x = single_library_seq$SEQ))
+        len_match <- sapply(match_id_single, length)
+        to_keep <- which(len_match == 1) # keep only guides with a unique association
+        match_id_single <- unlist(match_id_single[to_keep])
+        
+        dual_library_seq$ID_single[to_keep] <- single_library_seq$ID[match_id_single]
+        dual_library_seq$SEQ_single[to_keep] <- single_library_seq$SEQ[match_id_single]
+        
+      } else {
+        
+        stop("dual screen guides have variable length, > and < than single screen")
+        
+      }
+    }
     
+  }else{
+    # match by exact sequence
     match_id_dual <- lapply(single_library_seq$SEQ, function(x) 
       grep(pattern = x, x = dual_library_seq$SEQ))
     len_match <- sapply(match_id_dual, length)
@@ -572,26 +624,6 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
     match_id_dual <- unlist(match_id_dual[to_keep])
     
     dual_library_seq$ID_single[match_id_dual] <- single_library_seq$ID[to_keep]
-    dual_library_seq$SEQ_single[match_id_dual] <- single_library_seq$SEQ[to_keep]
-    
-  } else {
-    
-    if (all(dual_nchar <= single_nchar)) {
-      
-      match_id_single  <-  lapply(dual_library_seq$SEQ, function(x) 
-        grep(pattern = x, x = single_library_seq$SEQ))
-      len_match <- sapply(match_id_single, length)
-      to_keep <- which(len_match == 1) # keep only guides with a unique association
-      match_id_single <- unlist(match_id_single[to_keep])
-      
-      dual_library_seq$ID_single[to_keep] <- single_library_seq$ID[match_id_single]
-      dual_library_seq$SEQ_single[to_keep] <- single_library_seq$SEQ[match_id_single]
-      
-    } else {
-      
-      stop("dual screen guides have variable length, > and < than single screen")
-      
-    }
     
   }
   
@@ -710,21 +742,22 @@ ccr2.logFCs2chromPos <- function(
 #' @examples
 ccr2.avgSingleGuides <- function(
   dual_FC, 
-  single_FC, 
-  match_dual_single_seq, 
+  #single_FC, 
+  #match_dual_single_seq, 
   guide_id
 ) { 
   
   # filter library seq based on single_FC match
-  match_dual_single_seq <- match_dual_single_seq %>% 
-    dplyr::filter(ID_single %in% rownames(single_FC))
+  #match_dual_single_seq <- match_dual_single_seq %>% 
+  #  dplyr::filter(ID_single %in% rownames(single_FC))
   
   # filter dual per guides with a single counterpart
-  guide <- dual_FC %>% 
-    dplyr::filter((sgRNA1_WGE_ID %in% match_dual_single_seq$ID &   
-                     sgRNA2_WGE_ID %in% match_dual_single_seq$ID) |  
-                    ((grepl("NONTARGET", Gene1) | grepl("CTRL", Gene1)) & sgRNA2_WGE_ID %in% match_dual_single_seq$ID) | 
-                    ((grepl("NONTARGET", Gene2) | grepl("CTRL", Gene2)) & sgRNA1_WGE_ID %in% match_dual_single_seq$ID))
+  guide <- dual_FC 
+  #%>% 
+   # dplyr::filter((sgRNA1_WGE_ID %in% match_dual_single_seq$ID &   
+  #                   sgRNA2_WGE_ID %in% match_dual_single_seq$ID) |  
+  #                  ((grepl("NONTARGET", Gene1) | grepl("CTRL", Gene1)) & sgRNA2_WGE_ID %in% match_dual_single_seq$ID) | 
+  #                  ((grepl("NONTARGET", Gene2) | grepl("CTRL", Gene2)) & sgRNA1_WGE_ID %in% match_dual_single_seq$ID))
   
   var <- sprintf("sgRNA%i", guide_id)
   
@@ -746,9 +779,9 @@ ccr2.avgSingleGuides <- function(
     dplyr::ungroup() %>%
     dplyr::rename(sgRNA_ID = !!sym(sprintf("%s_WGE_ID", var)))
   
-  guide$sgRNA_ID_single <- match_dual_single_seq$ID_single[match(guide$sgRNA_ID, match_dual_single_seq$ID)]
-  guide$avgFC_single <- single_FC$avgFC[match(guide$sgRNA_ID_single, rownames(single_FC))]
-  guide$correction_single <- single_FC$correction[match(guide$sgRNA_ID_single, rownames(single_FC))]
+  #guide$sgRNA_ID_single <- match_dual_single_seq$ID_single[match(guide$sgRNA_ID, match_dual_single_seq$ID)]
+  #guide$avgFC_single <- single_FC$avgFC[match(guide$sgRNA_ID_single, rownames(single_FC))]
+  #guide$correction_single <- single_FC$correction[match(guide$sgRNA_ID_single, rownames(single_FC))]
   
   return(guide)
   
@@ -771,8 +804,8 @@ ccr2.avgSingleGuides <- function(
 #' @examples
 ccr2.avgSingleGuides_combine <- function(
   dual_FC, 
-  single_FC, 
-  match_dual_single_seq, 
+  #single_FC, 
+  #match_dual_single_seq, 
   saveToFig = FALSE, 
   display = TRUE, 
   saveFormat = NULL, 
@@ -780,8 +813,14 @@ ccr2.avgSingleGuides_combine <- function(
   outdir = "./"
 ) { 
   
-  guide1 <- ccr2.avgSingleGuides(dual_FC, single_FC, match_dual_single_seq, 1)
-  guide2 <- ccr2.avgSingleGuides(dual_FC, single_FC, match_dual_single_seq, 2)
+  guide1 <- ccr2.avgSingleGuides(dual_FC, 
+                                 #single_FC, 
+                                 #match_dual_single_seq, 
+                                 1)
+  guide2 <- ccr2.avgSingleGuides(dual_FC, 
+                                 #single_FC, 
+                                 #match_dual_single_seq, 
+                                 2)
   
   if (saveToFig) {
     display <- TRUE
