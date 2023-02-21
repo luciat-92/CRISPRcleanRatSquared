@@ -33,14 +33,22 @@ get_input_data <- function(param_file) {
   }
   
   n_files <- length(count_files)
+  dual_library_list <- list()
   dual_count_list <- lapply(count_files, function(x)
     suppressWarnings(readr::read_table(sprintf('%s%s', input_fold, get(x)), 
                                 show_col_types = FALSE)))
   
-  dual_library_list <- lapply(library_files , function(x)
-    suppressWarnings(readxl::read_xlsx(sprintf('%s%s', input_fold, get(x)))))
-  
   for (idx_file in seq_len(n_files)) {
+    
+    # load library and specify col types:
+    names_col_lib <- names(readxl::read_xlsx(
+      path = sprintf('%s%s', input_fold, get(library_files[idx_file])), 
+      n_max = 0))
+    col_types_lib <- ifelse(grepl("Chr", names_col_lib) | grepl("WGE_ID", names_col_lib), 
+                            "text", "guess")
+    dual_library_list[[idx_file]] <- readxl::read_xlsx(
+      path = sprintf('%s%s', input_fold, get(library_files[idx_file])),
+      col_types = col_types_lib)
     
     print(sprintf("############ load file n. %i ############", idx_file))
     
@@ -104,13 +112,13 @@ get_input_data <- function(param_file) {
       dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol[id_na] <- dual_count_list[[idx_file]]$Gene2[id_na]
     }
     
-    id_na_lib <- which(is.na(dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol  ))
+    id_na_lib <- which(is.na(dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol))
     if (length(id_na_lib) > 0) {
       print(sprintf("assign missing Gene1 name in library for %i pairs", length(id_na_lib)))
       dual_library_list[[idx_file]]$sgRNA1_Approved_Symbol[id_na_lib] <- dual_count_list[[idx_file]]$Gene1[id_na_lib]
     }
     
-    id_na_lib <- which(is.na(dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol  ))
+    id_na_lib <- which(is.na(dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol))
     if (length(id_na_lib) > 0) {
       print(sprintf("assign missing Gene2 name in library for %i pairs", length(id_na_lib)))
       dual_library_list[[idx_file]]$sgRNA2_Approved_Symbol[id_na_lib] <- dual_count_list[[idx_file]]$Gene2[id_na_lib]
@@ -139,6 +147,7 @@ get_input_data <- function(param_file) {
     multiple_ID <- dual_library_seq %>% 
       dplyr::group_by(CHR_START_END_SEQ) %>%
       dplyr::summarise(
+        SEQ = unique(SEQ),
         n_ID = length(unique(ID)),
         ID_all = paste0(sort(unique(ID)), collapse = ","), 
         n_gene = length(unique(GENES)),
@@ -524,6 +533,45 @@ ccr2.compute_bliss <- function(dual_FC,
 
 #' Title
 #'
+#' @param dual_seq 
+#' @param single_library_seq 
+#'
+#' @return
+#'
+#' @examples
+match_dual_to_single <- function(dual_seq, single_library_seq){
+  
+  single_nchar <- sort(unique(nchar(single_library_seq$SEQ)))
+  if (length(single_nchar) > 1) {
+    stop("seq length in single library MUST always be the same")
+  }
+  if (nrow(dual_seq) > 1) {
+    stop("only one seq from dual library MUST be passed")
+  }
+  
+  match_vect <- rep(0, nrow(single_library_seq))
+  names(match_vect) <- single_library_seq$CHR_GENES_SEQ
+  
+  if (!is.na(dual_seq$CHR)) {
+    single_library_seq_chr <- single_library_seq %>%
+      dplyr::filter(CHR == dual_seq$CHR)
+    
+    if (nchar(dual_seq$SEQ) >= nchar(dual_seq$SEQ)) {
+      match_id <- sapply(single_library_seq_chr$SEQ, function(x) 
+        grepl(pattern = x, x = dual_seq$SEQ))
+    }else{
+      match_id <- grepl(pattern = dual_seq$SEQ, 
+                        x = single_library_seq_chr$SEQ)
+    }
+    match_vect[single_library_seq_chr$CHR_GENES_SEQ] <- match_id 
+  }
+  
+  return(match_vect)
+  
+}  
+
+#' Title
+#'
 #' @param dual_library 
 #' @param single_library 
 #'
@@ -532,10 +580,6 @@ ccr2.compute_bliss <- function(dual_FC,
 #'
 #' @examples
 ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
-  
-  #### add optional info on how to match (start - end trim), 
-  #### if this info is not available search for perfect match 1 to 1
-  #### search for matching SEQ and make sure gene and chr name is the same
   
   dual_library_seq <- data.frame(
     CHR = c(dual_library$sgRNA1_Chr, 
@@ -554,79 +598,54 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   dual_library_seq <- dual_library_seq %>% 
     dplyr::filter(!duplicated(CHR_GENES_SEQ)) %>%
     dplyr::mutate(ID_single = NA, SEQ_single = NA)
-  # filter(!duplicated(ID), LIBRARY == single_library_name) # from input consider all the libraries
 
+  if (!"hgcn_additional_name" %in% colnames(single_library)) {
+    single_library$hgcn_additional_name <- single_library$GENES
+  }
+    
   single_library_seq <- data.frame(
     CHR = single_library$CHRM,
     GENES = single_library$GENES, 
     ID = rownames(single_library),
-    SEQ = single_library$seq
-    )  %>%
+    SEQ = single_library$seq, 
+    ADDITIONAL_GENE_NAME = single_library$hgcn_additional_name)  %>%
     dplyr::mutate(CHR_GENES_SEQ = paste(CHR, GENES, SEQ, sep = "_"))
-  
-  # filter for genes and non-targeting (allows to reduce computational time!)
+    
+  # filter for genes and non-targeting
   single_library_seq <- single_library_seq %>%
-    dplyr::filter(!duplicated(CHR_GENES_SEQ), 
-                  GENES %in% dual_library_seq$GENES | GENES == "NON-TARGETING")
-  
-  #dual_library_seq <- dual_library_seq %>%
-  #    filter(GENES %in% single_library_seq$GENES | is.na(GENES))
+      dplyr::filter(!duplicated(CHR_GENES_SEQ), 
+                    GENES %in% dual_library_seq$GENES | 
+                    ADDITIONAL_GENE_NAME %in% dual_library_seq$GENES | 
+                    GENES == "NON-TARGETING")
   
   # NOTE: RACK1, MARCHF5 and INTS6L removed because they have another name in single,
-  # how to solve?
+  # how to solve? (partially solved with hg38 matching)
   
-  single_nchar <- sort(unique(nchar(single_library_seq$SEQ)))
-  dual_nchar <- sort(unique(nchar(dual_library_seq$SEQ)))
+  # Create matrix to match single x dual SEQ
+  match_matrix <- sapply(seq_len(nrow(dual_library_seq)), function(id) 
+    match_dual_to_single(dual_library_seq[id,], single_library_seq))
+  colnames(match_matrix) <- dual_library_seq$CHR_GENES_SEQ
   
-  if (length(single_nchar) > 1 & !identical(single_nchar, dual_nchar)) {
-    stop("single screen library MUST have the same length for each guide\n
-         or have the same options as dual screen library ")
+  if (any(rowSums(match_matrix) > 1)) {
+    id_mol <- which(rowSums(match_matrix) > 1)
+    print(sprintf("Same single seq matches multiple double seq (n. SEQ = %i)", 
+                  length(id_mol)))
+    match_matrix[id_mol, ] <- 0
   }
   
-  if (length(single_nchar) == 1) {
-    if (all(single_nchar <= dual_nchar)) {
-      
-      match_id_dual <- lapply(single_library_seq$SEQ, function(x) 
-        grep(pattern = x, x = dual_library_seq$SEQ))
-      len_match <- sapply(match_id_dual, length)
-      to_keep <- which(len_match == 1) # keep only guides with a unique association
-      match_id_dual <- unlist(match_id_dual[to_keep])
-      
-      dual_library_seq$ID_single[match_id_dual] <- single_library_seq$ID[to_keep]
-      dual_library_seq$SEQ_single[match_id_dual] <- single_library_seq$SEQ[to_keep]
-      
-    } else {
-      
-      if (all(dual_nchar <= single_nchar)) {
-        
-        match_id_single  <-  lapply(dual_library_seq$SEQ, function(x) 
-          grep(pattern = x, x = single_library_seq$SEQ))
-        len_match <- sapply(match_id_single, length)
-        to_keep <- which(len_match == 1) # keep only guides with a unique association
-        match_id_single <- unlist(match_id_single[to_keep])
-        
-        dual_library_seq$ID_single[to_keep] <- single_library_seq$ID[match_id_single]
-        dual_library_seq$SEQ_single[to_keep] <- single_library_seq$SEQ[match_id_single]
-        
-      } else {
-        
-        stop("dual screen guides have variable length, > and < than single screen")
-        
-      }
-    }
-    
-  }else{
-    # match by exact sequence
-    match_id_dual <- lapply(single_library_seq$SEQ, function(x) 
-      grep(pattern = x, x = dual_library_seq$SEQ))
-    len_match <- sapply(match_id_dual, length)
-    to_keep <- which(len_match == 1) # keep only guides with a unique association
-    match_id_dual <- unlist(match_id_dual[to_keep])
-    
-    dual_library_seq$ID_single[match_id_dual] <- single_library_seq$ID[to_keep]
-    
+  if (any(colSums(match_matrix) > 1)) {
+    id_mol <- which(colSums(match_matrix) > 1)
+    print(sprintf("Multiple single seq match same double seq (n. SEQ = %i)", 
+                  length(id_mol)))
+    match_matrix[,id_mol] <- 0
   }
   
+  # add info on the final table:
+  match_id_dual <- which(colSums(match_matrix) == 1)
+  match_id_single <- unlist(apply(match_matrix, 2, function(x) which(x == 1)))
+  dual_library_seq$ID_single[match_id_dual] <- single_library_seq$ID[match_id_single]
+  dual_library_seq$SEQ_single[match_id_dual] <- single_library_seq$SEQ[match_id_single]
+
   return(dual_library_seq)
 }
 
