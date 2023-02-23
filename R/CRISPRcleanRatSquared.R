@@ -747,19 +747,17 @@ ccr2.logFCs2chromPos <- function(
 
 #' Title
 #'
-#' collapse avgFC via mean for each gene in guide1 or guide2 across all the other genes
+#' psuedo single avgFC via mean for each gene in guide1 or guide2 across all the other genes
 #' store also number of genes from which mean is computed
 #'
 #' @param dual_FC 
-#' @param single_FC 
-#' @param match_dual_single_seq 
 #' @param guide_id 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-ccr2.avgSingleGuides <- function(
+ccr2.createPseudoSingle <- function(
   dual_FC, 
   #single_FC, 
   #match_dual_single_seq, 
@@ -809,8 +807,6 @@ ccr2.avgSingleGuides <- function(
 #' Title
 #'
 #' @param dual_FC 
-#' @param single_FC 
-#' @param match_dual_single_seq 
 #' @param saveToFig 
 #' @param display 
 #' @param saveFormat 
@@ -821,7 +817,7 @@ ccr2.avgSingleGuides <- function(
 #' @export
 #'
 #' @examples
-ccr2.avgSingleGuides_combine <- function(
+ccr2.createPseudoSingle_combine <- function(
   dual_FC, 
   #single_FC, 
   #match_dual_single_seq, 
@@ -832,31 +828,34 @@ ccr2.avgSingleGuides_combine <- function(
   outdir = "./"
 ) { 
   
-  guide1 <- ccr2.avgSingleGuides(dual_FC, 
+  guide1 <- ccr2.createPseudoSingle(dual_FC, 
                                  #single_FC, 
                                  #match_dual_single_seq, 
                                  1)
-  guide2 <- ccr2.avgSingleGuides(dual_FC, 
+  guide2 <- ccr2.createPseudoSingle(dual_FC, 
                                  #single_FC, 
                                  #match_dual_single_seq, 
                                  2)
   
   if (saveToFig) {
     display <- TRUE
-    file_name <- sprintf("%s%s_CollapsedGuideCommon.%s", outdir, EXPname, saveFormat)
+    file_name <- sprintf("%s%s_PseudoGuideCommon.%s", outdir, EXPname, saveFormat)
   }
   
   
   if (display) {
     
-    common_guides <- dplyr::inner_join(guide1, guide2, by = "sgRNA_ID") %>% 
-      dplyr::mutate(ratio_n = n.x/n.y)
+    common_guides <- dplyr::inner_join(guide1, guide2, by = "sgRNA_ID")
     
     if (nrow(common_guides) > 0) {
-      breaks_size1 <- round(seq(min(common_guides$n.x), max(common_guides$n.x), length.out = 6))
-      breaks_size2 <- round(seq(min(common_guides$n.y), max(common_guides$n.y), length.out = 6))
-      text_corr <- data.frame(label = sprintf("Pear. corr. = %.3f", cor(common_guides$avgFC.x, common_guides$avgFC.y)), 
+      breaks_size1 <- round(seq(min(common_guides$n.x), 
+                                max(common_guides$n.x), length.out = 6))
+      breaks_size2 <- round(seq(min(common_guides$n.y), 
+                                max(common_guides$n.y), length.out = 6))
+      text_corr <- data.frame(label = sprintf("Pear. corr. = %.3f", 
+                                              cor(common_guides$avgFC.x, common_guides$avgFC.y)), 
                               xpos = -Inf, ypos = Inf)
+      
       pl <- ggplot(common_guides, aes(x = avgFC.x, y = avgFC.y, 
                                       size = n.x, color = n.y)) + 
         geom_point(alpha = 0.5) +
@@ -867,7 +866,7 @@ ccr2.avgSingleGuides_combine <- function(
         geom_text(data = text_corr, 
                   aes(label = label, x = xpos, y = ypos), size = 5, 
                   hjust = -0.1, vjust = 1.1, inherit.aes = F) +
-        xlab("Collapsed guide position 1") + ylab("Collapsed guide position 2") + 
+        xlab("Psuedo single guide position 1") + ylab("Pseudo single guide position 2") + 
         labs(color = "N. position1", size = "N. position2") + 
         ggtitle("Guides in common")
       print(pl)

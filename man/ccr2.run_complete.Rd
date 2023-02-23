@@ -7,15 +7,15 @@
 ccr2.run_complete(
   filename_single,
   min_reads_single = 30,
-  EXPname,
   libraryAnnotation_single,
-  display = FALSE,
-  outdir = "./",
   min_reads = 30,
-  saveToFig,
-  saveFormat = "pdf",
   libraryAnnotation_dual,
   dual_count,
+  EXPname,
+  display = FALSE,
+  outdir = "./",
+  saveToFig,
+  saveFormat = "pdf",
   correctGW,
   excludeGene_plot = NULL,
   dual_CNA,
@@ -27,23 +27,23 @@ ccr2.run_complete(
 
 \item{min_reads_single}{}
 
-\item{EXPname}{}
-
 \item{libraryAnnotation_single}{}
+
+\item{min_reads}{}
+
+\item{libraryAnnotation_dual}{}
+
+\item{dual_count}{}
+
+\item{EXPname}{}
 
 \item{display}{}
 
 \item{outdir}{}
 
-\item{min_reads}{}
-
 \item{saveToFig}{}
 
 \item{saveFormat}{}
-
-\item{libraryAnnotation_dual}{}
-
-\item{dual_count}{}
 
 \item{correctGW}{}
 

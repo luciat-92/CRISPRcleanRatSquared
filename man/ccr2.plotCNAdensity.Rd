@@ -12,7 +12,8 @@ ccr2.plotCNAdensity(
   outdir = "./",
   EXPname = "",
   excludeGene = NULL,
-  CN_thr
+  CN_thr,
+  var_to_plot = "observed"
 )
 }
 \arguments{
@@ -31,6 +32,8 @@ ccr2.plotCNAdensity(
 \item{excludeGene}{}
 
 \item{CN_thr}{}
+
+\item{var_to_plot}{}
 }
 \description{
 plot: density divided per max CNA threshold
