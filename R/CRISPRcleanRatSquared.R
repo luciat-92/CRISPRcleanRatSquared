@@ -189,6 +189,23 @@ get_input_data <- function(param_file) {
         dplyr::select(-MyNotes)
     }
     
+    # chr X -> 23, chr Y -> 24
+    dual_library_list[[idx_file]] <- dual_library_list[[idx_file]] %>% 
+      dplyr::mutate(
+        sgRNA1_Chr = dplyr::case_when(
+          sgRNA1_Chr == "X" ~ "23",
+          sgRNA1_Chr == "Y" ~ "24",
+          .default = as.character(sgRNA1_Chr)), 
+        sgRNA2_Chr = dplyr::case_when(
+          sgRNA2_Chr == "X" ~ "23",
+          sgRNA2_Chr == "Y" ~ "24",
+          .default = as.character(sgRNA2_Chr))
+        ) %>%
+      dplyr::mutate(
+        sgRNA1_Chr = as.numeric(sgRNA1_Chr), 
+        sgRNA2_Chr = as.numeric(sgRNA2_Chr)
+        )
+  
   }
   
   dual_CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
@@ -272,6 +289,16 @@ ccr.run_complete <- function(
   libraryAnnotation_single <- libraryAnnotation_single %>% 
     dplyr::filter(CODE %in% rownames(single_correctedFCs)) 
   libraryAnnotation_single <- libraryAnnotation_single[rownames(single_correctedFCs),]
+  
+  # X --> 23, Y --> 24 
+  libraryAnnotation_single <- libraryAnnotation_single %>% 
+    dplyr::mutate(
+      CHRM = dplyr::case_when(
+        CHRM == "X" ~ "23",
+        CHRM == "Y" ~ "24",
+        .default = as.character(CHRM))
+      ) %>%
+    dplyr::mutate(CHRM = as.numeric(CHRM))
   
   return(list(
     FC = single_correctedFCs, 
@@ -622,8 +649,10 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   # how to solve? (partially solved with hg38 matching)
   
   # Create matrix to match single x dual SEQ
-  match_matrix <- sapply(seq_len(nrow(dual_library_seq)), function(id) 
-    match_dual_to_single(dual_library_seq[id,], single_library_seq))
+  match_matrix <- sapply(
+    seq_len(nrow(dual_library_seq)), function(id) 
+      match_dual_to_single(dual_library_seq[id,], single_library_seq)
+    )
   colnames(match_matrix) <- dual_library_seq$CHR_GENES_SEQ
   
   if (any(rowSums(match_matrix) > 1)) {
