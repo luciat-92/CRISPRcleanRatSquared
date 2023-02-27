@@ -781,6 +781,8 @@ ccr2.logFCs2chromPos <- function(
 #'
 #' @param dual_FC 
 #' @param guide_id 
+#' @param single_FC 
+#' @param match_dual_single_seq 
 #'
 #' @return
 #' @export
@@ -788,8 +790,8 @@ ccr2.logFCs2chromPos <- function(
 #' @examples
 ccr2.createPseudoSingle <- function(
   dual_FC, 
-  #single_FC, 
-  #match_dual_single_seq, 
+  single_FC, 
+  match_dual_single_seq, 
   guide_id
 ) { 
   
@@ -825,9 +827,24 @@ ccr2.createPseudoSingle <- function(
     dplyr::ungroup() %>%
     dplyr::rename(sgRNA_ID = !!sym(sprintf("%s_WGE_ID", var)))
   
-  #guide$sgRNA_ID_single <- match_dual_single_seq$ID_single[match(guide$sgRNA_ID, match_dual_single_seq$ID)]
-  #guide$avgFC_single <- single_FC$avgFC[match(guide$sgRNA_ID_single, rownames(single_FC))]
-  #guide$correction_single <- single_FC$correction[match(guide$sgRNA_ID_single, rownames(single_FC))]
+  # add matching single ID
+  guide <- dplyr::left_join(
+    guide, 
+    match_dual_single_seq %>% 
+      dplyr::select(ID, ID_single, SEQ_single) %>%
+      dplyr::rename(sgRNA_ID = ID), by = "sgRNA_ID"
+  )
+  
+  # add logFC from single
+  guide <- dplyr::left_join(
+    guide, 
+    single_FC %>% 
+      tibble::rownames_to_column(var = "ID_single") %>%
+      dplyr::select(ID_single, avgFC, correction, correctedFC) %>%
+      dplyr::rename(avgFC_single = avgFC, 
+                    correction_single = correction, 
+                    correctedFC_single = correctedFC), 
+    by = "ID_single")
   
   return(guide)
   
@@ -841,6 +858,8 @@ ccr2.createPseudoSingle <- function(
 #' @param saveFormat 
 #' @param EXPname 
 #' @param outdir 
+#' @param single_FC 
+#' @param match_dual_single_seq 
 #'
 #' @return
 #' @export
@@ -848,8 +867,8 @@ ccr2.createPseudoSingle <- function(
 #' @examples
 ccr2.createPseudoSingle_combine <- function(
   dual_FC, 
-  #single_FC, 
-  #match_dual_single_seq, 
+  single_FC, 
+  match_dual_single_seq, 
   saveToFig = FALSE, 
   display = TRUE, 
   saveFormat = NULL, 
@@ -857,14 +876,19 @@ ccr2.createPseudoSingle_combine <- function(
   outdir = "./"
 ) { 
   
-  guide1 <- ccr2.createPseudoSingle(dual_FC, 
-                                 #single_FC, 
-                                 #match_dual_single_seq, 
-                                 1)
-  guide2 <- ccr2.createPseudoSingle(dual_FC, 
-                                 #single_FC, 
-                                 #match_dual_single_seq, 
-                                 2)
+  guide1 <- ccr2.createPseudoSingle(
+    dual_FC = dual_FC,
+    single_FC = single_FC,
+    match_dual_single_seq = match_dual_single_seq,
+    guide_id = 1
+  )
+  
+  guide2 <- ccr2.createPseudoSingle( 
+    dual_FC = dual_FC,
+    single_FC = single_FC,
+    match_dual_single_seq = match_dual_single_seq,
+    guide_id = 2
+  )
   
   if (saveToFig) {
     display <- TRUE
@@ -915,8 +939,6 @@ ccr2.createPseudoSingle_combine <- function(
 #' Model to convert combined dual to single screens
 #' that depends on the specific gene selection
 #'
-#' @param dual_collapsed 
-#' @param single_FC 
 #' @param guide_id 
 #' @param correctGW 
 #' @param display 
@@ -924,14 +946,14 @@ ccr2.createPseudoSingle_combine <- function(
 #' @param saveFormat 
 #' @param outdir 
 #' @param EXPname 
+#' @param pseudo_single_FC 
 #'
 #' @return
 #' @export
 #'
 #' @examples
 ccr2.modelSingleVSCombined <- function(
-  dual_collapsed, 
-  single_FC, 
+  pseudo_single_FC, 
   guide_id, 
   correctGW = NULL, 
   display=TRUE, 
@@ -942,13 +964,13 @@ ccr2.modelSingleVSCombined <- function(
 ) { 
   
   # remove NA in single screens
-  dual_collapsed <- dual_collapsed[!is.na(dual_collapsed$sgRNA_ID_single), ]
+  matched_df <- pseudo_single_FC[!is.na(pseudo_single_FC$ID_single), ]
   # fmla <- as.formula("avgFC ~ avgFC_single*correction_single")
   fmla <- "avgFC ~ 0 + avgFC_single"
 
   fit_model <- glm(formula = as.formula(fmla), 
-                   data = dual_collapsed,
-                   weights = dual_collapsed$n, 
+                   data = matched_df,
+                   weights = matched_df$n, 
                    family = gaussian(link = "identity"))
   # remove outliers
   cooksD <- cooks.distance(fit_model)
@@ -959,18 +981,18 @@ ccr2.modelSingleVSCombined <- function(
 
   if (length(influential) > 0) {
     # repeat:
-    dual_collapsed_filt <- dual_collapsed[!rownames(dual_collapsed) %in% names(influential), ] %>%
+    matched_df_filt <- matched_df[!rownames(matched_df) %in% names(influential), ] %>%
       as.data.frame()
-    rownames(dual_collapsed_filt) <- paste0(dual_collapsed_filt$genes, "_", 
-                                            dual_collapsed_filt$sgRNA_ID)
+    rownames(matched_df_filt) <- paste0(matched_df_filt$genes, "_", 
+                                        matched_df_filt$sgRNA_ID)
     fit_model <- glm(formula = as.formula(fmla), 
-                     data = dual_collapsed_filt,
-                     weights = dual_collapsed_filt$n, 
+                     data = matched_df_filt,
+                     weights = matched_df_filt$n, 
                      family = gaussian(link = "identity"))  
-    rm_guides_cooks <- dual_collapsed[names(influential), ]
+    rm_guides_cooks <- matched_df[names(influential), ]
     
   }else{
-    dual_collapsed_filt <- dual_collapsed
+    matched_df_filt <- matched_df
     rm_guides_cooks <- NA
   }
   
@@ -984,11 +1006,11 @@ ccr2.modelSingleVSCombined <- function(
   
   if (saveToFig) {
     display <- TRUE
-    file_name_comp <- sprintf("%s%s_CollapsedGuide%i_vs_single.%s", 
+    file_name_comp <- sprintf("%s%s_PseudoGuide%i_vs_single.%s", 
                               outdir, EXPname, guide_id, saveFormat)
-    file_name_resid <- sprintf("%s%s_CollapsedGuide%i_vs_single_resid.%s", 
+    file_name_resid <- sprintf("%s%s_PseudoGuide%i_vs_single_resid.%s", 
                                outdir, EXPname, guide_id, saveFormat)
-    file_name_qqplot <- sprintf("%s%s_CollapsedGuide%i_vs_single_qqplot.%s", 
+    file_name_qqplot <- sprintf("%s%s_PseudoGuide%i_vs_single_qqplot.%s", 
                                 outdir, EXPname, guide_id, saveFormat)
   }
   
@@ -1018,8 +1040,8 @@ ccr2.modelSingleVSCombined <- function(
       geom_text(data = text_corr, 
                 aes(label = label, x = xpos, y = ypos), size = 5, 
                 hjust = -0.1, vjust = 1.1, inherit.aes = F) +
-      ylab("Collapsed dual avgFC") + 
-      xlab("single avgFC") + 
+      ylab("Pseudo single avgFC") + 
+      xlab("Single avgFC") + 
       ggtitle(sprintf("Guide position %i", guide_id))
     print(pl_comp)
     
@@ -1078,32 +1100,76 @@ ccr2.modelSingleVSCombined <- function(
     ggsave(filename = file_name_qqplot, plot = pl_qq, width = 5, height = 5)
   }
   
-  ## predict on single guides ##
+  return(list(model = fit_model,
+              model_summary = summary(fit_model), 
+              rm_guides_cooks = rm_guides_cooks))
+}
+
+#' Title
+#'
+#' @param model_single_to_pseudo 
+#' @param single_FC 
+#' @param guide_id 
+#' @param correctGW 
+#' @param pseudo_single_FC 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.injectData <- function(
+  model_single_to_pseudo,
+  pseudo_single_FC,
+  single_FC, 
+  guide_id, 
+  correctGW = NULL
+) { 
+  
+  ## predict on single guides (make a new function) ##
   single_FC <- single_FC %>% 
     dplyr::rename(avgFC_single = avgFC, correction_single = correction)
   
-  predict_single <- predict(fit_model, newdata =  single_FC)
-  predict_single_FC <- single_FC[, 1:7] %>% 
+  pseudo_single_GW <- predict(model_single_to_pseudo, newdata = single_FC)
+  pseudo_single_GW <- single_FC[, 1:7] %>% 
     dplyr::mutate(sgRNA_ID_single = rownames(single_FC), 
-                  avgFC = unname(predict_single), 
-                  guideID = guide_id) %>%
+                  avgFC = unname(pseudo_single_GW), 
+                  guideID = guide_id, 
+                  sgRNA_ID_dual = NA) %>%
     dplyr::rename(avgFC_original = avgFC_single)
   
   # replace fitted with original values when available
-  predict_single_FC$avgFC[match(dual_collapsed_filt$sgRNA_ID_single, 
-                                predict_single_FC$sgRNA_ID_single)] <- dual_collapsed_filt$avgFC
+  matched_df <- pseudo_single_FC[!is.na(pseudo_single_FC$ID_single), ]
+  pseudo_single_GW$avgFC[match(matched_df$ID_single, 
+                                pseudo_single_GW$sgRNA_ID_single)] <- matched_df$avgFC
+  pseudo_single_GW$sgRNA_ID_dual[match(matched_df$ID_single, 
+                               pseudo_single_GW$sgRNA_ID_single)] <- matched_df$sgRNA_ID
+  
+  # add values not matched by position
+  not_matched_to_add <- pseudo_single_FC %>%
+    dplyr::filter(is.na(ID_single)) %>%
+    dplyr::mutate(avgFC_original = NA, 
+                  SEQ = NA, 
+                  sgRNA_ID_single = NA, 
+                  guideID = guide_id) %>%
+    dplyr::rename(sgRNA_ID_dual = sgRNA_ID)
+  
+  col_names <- colnames(pseudo_single_GW)
+  pseudo_single_GW <- dplyr::bind_rows(
+    pseudo_single_GW, 
+    not_matched_to_add[, col_names]) %>% 
+    dplyr::arrange(CHR, BP)  
   
   if (!is.null(correctGW)) {
     
     if (correctGW == "CHR") {
-      predict_single_FC <- predict_single_FC %>% 
+      pseudo_single_GW <- pseudo_single_GW %>% 
         dplyr::group_by(CHR) %>%
         dplyr::rename(avgFC_uncorr = avgFC) %>%
         dplyr::mutate(avgFC = avgFC_uncorr - mean(avgFC_uncorr)) %>%
         dplyr::ungroup()
     } else {
       if (correctGW == "GW") {
-        predict_single_FC <- predict_single_FC %>% 
+        pseudo_single_GW <- pseudo_single_GW %>% 
           dplyr::rename(avgFC_uncorr = avgFC) %>%
           dplyr::mutate(avgFC = avgFC_uncorr - mean(avgFC_uncorr)) %>%
           dplyr::ungroup()
@@ -1112,28 +1178,26 @@ ccr2.modelSingleVSCombined <- function(
       }
     }
   } else {
-    predict_single_FC <- predict_single_FC %>% 
+    pseudo_single_GW <- pseudo_single_GW %>% 
       dplyr::mutate(avgFC_uncorr = NA)
   }
   
-  return(list(predict_single = predict_single_FC, 
-              model_summary = summary(fit_model), 
-              rm_guides_cooks = rm_guides_cooks))
+  return(pseudo_single_GW)
   
 }
 
 #' Title
 #'
-#' adjust ccr output applied to collapsed and filter per considered guide in dual
+#' adjust ccr output applied to pseudo single and filter per considered guide in dual
 #'
 #' @param dataInjection_correctedFCs 
-#' @param dual_collapsed 
 #' @param guide_id 
 #' @param saveToFig 
 #' @param display 
 #' @param saveFormat 
 #' @param outdir 
 #' @param EXPname 
+#' @param pseudo_single 
 #'
 #' @return
 #' @export
@@ -1141,7 +1205,7 @@ ccr2.modelSingleVSCombined <- function(
 #' @examples
 ccr2.filterGWclean <- function(
   dataInjection_correctedFCs, 
-  dual_collapsed, 
+  pseudo_single, 
   guide_id, 
   saveToFig = FALSE, 
   display = TRUE, 
@@ -1150,17 +1214,22 @@ ccr2.filterGWclean <- function(
   EXPname = ""
 ) {
   
-  dual_collpased_correctedFCs <- dataInjection_correctedFCs %>% 
+  pseudo_single_correctedFCs <- dataInjection_correctedFCs %>% 
     dplyr::mutate(correction = correctedFC - avgFC) %>% 
-    dplyr::select(sgRNA_ID_single, avgFC_uncorr, guideIdx, 
-                  guideID, correction, correctedFC)
+    dplyr::select(sgRNA_ID_dual,
+                  guideIdx, guideID, 
+                  correction, correctedFC) %>%
+    dplyr::rename(sgRNA_ID = sgRNA_ID_dual)
   
-  complete_out <- dplyr::left_join(dual_collapsed, dual_collpased_correctedFCs) %>%
+  complete_out <- dplyr::left_join(
+    pseudo_single, 
+    pseudo_single_correctedFCs, 
+    by = "sgRNA_ID") %>%
     dplyr::mutate(correction_scaled = n*correction)
   
   if (saveToFig) {
     display <- TRUE
-    file_name <- sprintf("%s%s_correction_singleVScollapsed_guide%i.%s", 
+    file_name <- sprintf("%s%s_correction_singleVSpseudosingle_guide%i.%s", 
                          outdir, EXPname, guide_id, saveFormat)
   }
   
@@ -1175,7 +1244,7 @@ ccr2.filterGWclean <- function(
       theme(legend.position = "right") + 
       ggtitle(sprintf("Guide position %i", guide_id)) +
       xlab("Single correction") + 
-      ylab("Dual collapsed correction")
+      ylab("Pseudo single correction")
     print(pl)
     
   }
@@ -1191,13 +1260,13 @@ ccr2.filterGWclean <- function(
 #' Title
 #'
 #' @param dual_FC 
-#' @param dual_collapsedG1_correctedFCs 
-#' @param dual_collapsedG2_correctedFCs 
 #' @param display 
 #' @param saveToFig 
 #' @param saveFormat 
 #' @param outdir 
 #' @param EXPname 
+#' @param pseudo_single_p1_correctedFCs 
+#' @param pseudo_single_p2_correctedFCs 
 #'
 #' @return
 #' @export
@@ -1205,8 +1274,8 @@ ccr2.filterGWclean <- function(
 #' @examples
 ccr2.solveLinearSys <- function(
   dual_FC, 
-  dual_collapsedG1_correctedFCs, 
-  dual_collapsedG2_correctedFCs, 
+  pseudo_single_p1_correctedFCs, 
+  pseudo_single_p2_correctedFCs, 
   display = TRUE, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
@@ -1218,17 +1287,17 @@ ccr2.solveLinearSys <- function(
   dual_FC <- dual_FC %>% 
     dplyr::mutate(sgRNA_ID_pair = paste0(sgRNA1_WGE_ID, "~", sgRNA2_WGE_ID)) 
 
-  combinations <- t(sapply(dual_collapsedG1_correctedFCs$sgRNA_ID, 
-                           function(x) paste0(x, "~", dual_collapsedG2_correctedFCs$sgRNA_ID)))
+  combinations <- t(sapply(pseudo_single_p1_correctedFCs$sgRNA_ID, 
+                           function(x) paste0(x, "~", pseudo_single_p2_correctedFCs$sgRNA_ID)))
   matrix_interactions <- apply(combinations, 2, 
                                function(x) as.numeric(x %in% dual_FC$sgRNA_ID_pair))
-  rownames(matrix_interactions) <- dual_collapsedG1_correctedFCs$sgRNA_ID
-  colnames(matrix_interactions) <- dual_collapsedG2_correctedFCs$sgRNA_ID
+  rownames(matrix_interactions) <- pseudo_single_p1_correctedFCs$sgRNA_ID
+  colnames(matrix_interactions) <- pseudo_single_p2_correctedFCs$sgRNA_ID
   # remove rows and columns with no index, correspond to pairs including "NONTARGET"
   id_rm_row <- rowSums(matrix_interactions) == 0
   id_rm_col <- colSums(matrix_interactions) == 0
   matrix_interactions <- matrix_interactions[!id_rm_row, ]
-  matrix_interactions <- matrix_interactions[, !id_rm_col]
+  matrix_interactions <- matrix_interactions[,!id_rm_col]
   combinations <- combinations[!id_rm_row, ]
   combinations <- combinations[, !id_rm_col]
   
@@ -1251,10 +1320,11 @@ ccr2.solveLinearSys <- function(
   matrix_sys <- rbind(do.call(rbind, tmp_G1_vect), do.call(rbind, tmp_G2_vect))
   rownames(matrix_sys) <- c(rownames(matrix_interactions), colnames(matrix_interactions))
   colnames(matrix_sys) <- as.vector(t(combinations))
+  print(dim(matrix_sys))
   
   ### 3. create coefficient matrix ###
-  correction_vect <- c(dual_collapsedG1_correctedFCs$correction_scaled[!id_rm_row], 
-                       dual_collapsedG2_correctedFCs$correction_scaled[!id_rm_col])
+  correction_vect <- c(pseudo_single_p1_correctedFCs$correction_scaled[!id_rm_row], 
+                       pseudo_single_p2_correctedFCs$correction_scaled[!id_rm_col])
   
   # the matrix is very sparse, 
   time_solve <- system.time(correction_pair <- MASS::ginv(matrix_sys) %*% correction_vect)
@@ -1265,13 +1335,13 @@ ccr2.solveLinearSys <- function(
                         correction = correction_pair) %>%
     dplyr::filter(sgRNA_ID_pair %in% dual_FC$sgRNA_ID_pair)
   # add back pairs including non target sgrna
-  tmp1 <-  dual_collapsedG1_correctedFCs %>% 
+  tmp1 <-  pseudo_single_p1_correctedFCs %>% 
     dplyr::filter(id_rm_row) %>% 
     dplyr::select(sgRNA_ID, correction) %>%
     dplyr::mutate(sgRNA_ID_pair = dual_FC$sgRNA_ID_pair[match(sgRNA_ID, dual_FC$sgRNA1_WGE_ID)]) %>%
     dplyr::select(-sgRNA_ID)
   
-  tmp2 <-  dual_collapsedG2_correctedFCs %>% 
+  tmp2 <-  pseudo_single_p2_correctedFCs %>% 
     dplyr::filter(id_rm_col) %>% 
     dplyr::select(sgRNA_ID, correction) %>%
     dplyr::mutate(sgRNA_ID_pair = dual_FC$sgRNA_ID_pair[match(sgRNA_ID, dual_FC$sgRNA2_WGE_ID)]) %>%
@@ -1282,39 +1352,39 @@ ccr2.solveLinearSys <- function(
   dual_FC_correctedFC <- dplyr::left_join(dual_FC, df_corr) %>%
     dplyr::mutate(correctedFC = avgFC + correction)
   
-  collapsed_correction <- data.frame(
-    sgRNA_ID = c(dual_collapsedG1_correctedFCs$sgRNA_ID[!id_rm_row], 
-                 dual_collapsedG2_correctedFCs$sgRNA_ID[!id_rm_col]), 
-    gene = c(dual_collapsedG1_correctedFCs$genes[!id_rm_row], 
-             dual_collapsedG2_correctedFCs$genes[!id_rm_col]),
-    collapsed_fitted = matrix_sys %*% correction_pair, 
-    collapsed = correction_vect, 
-    guide_pos = c(rep(1, nrow(dual_collapsedG1_correctedFCs[!id_rm_row, ])), 
-                  rep(2, nrow(dual_collapsedG2_correctedFCs[!id_rm_col, ]))))
+  pseudo_single_correction <- data.frame(
+    sgRNA_ID = c(pseudo_single_p1_correctedFCs$sgRNA_ID[!id_rm_row], 
+                 pseudo_single_p2_correctedFCs$sgRNA_ID[!id_rm_col]), 
+    gene = c(pseudo_single_p1_correctedFCs$genes[!id_rm_row], 
+             pseudo_single_p2_correctedFCs$genes[!id_rm_col]),
+    pseudo_single_fitted = matrix_sys %*% correction_pair, 
+    pseudo_single = correction_vect, 
+    guide_pos = c(rep(1, nrow(pseudo_single_p1_correctedFCs[!id_rm_row, ])), 
+                  rep(2, nrow(pseudo_single_p2_correctedFCs[!id_rm_col, ]))))
   
   # plot
-  collapsed_correction$collapsed_fitted <- collapsed_correction$collapsed_fitted/c(dual_collapsedG1_correctedFCs$n[!id_rm_row],  
-                                                         dual_collapsedG2_correctedFCs$n[!id_rm_col])
-  collapsed_correction$collapsed <- collapsed_correction$collapsed/c(dual_collapsedG1_correctedFCs$n[!id_rm_row],  
-                                           dual_collapsedG2_correctedFCs$n[!id_rm_col])
-  collapsed_correction$guide_pos <- factor(collapsed_correction$guide_pos)
-  collapsed_correction$ID <- paste0(collapsed_correction$gene, "_", 
-                                    collapsed_correction$sgRNA_ID)
-  collapsed_correction$outliers <- ""
-  id_out <- abs(collapsed_correction$collapsed - collapsed_correction$collapsed_fitted) > 0.5
-  collapsed_correction$outliers[id_out] <- collapsed_correction$ID[id_out]
+  pseudo_single_correction$pseudo_single_fitted <- pseudo_single_correction$pseudo_single_fitted/c(pseudo_single_p1_correctedFCs$n[!id_rm_row],  
+                                                                                   pseudo_single_p2_correctedFCs$n[!id_rm_col])
+  pseudo_single_correction$pseudo_single <- pseudo_single_correction$pseudo_single/c(pseudo_single_p1_correctedFCs$n[!id_rm_row],  
+                                                                     pseudo_single_p2_correctedFCs$n[!id_rm_col])
+  pseudo_single_correction$guide_pos <- factor(pseudo_single_correction$guide_pos)
+  pseudo_single_correction$ID <- paste0(pseudo_single_correction$gene, "_", 
+                                        pseudo_single_correction$sgRNA_ID)
+  pseudo_single_correction$outliers <- ""
+  id_out <- abs(pseudo_single_correction$pseudo_single - pseudo_single_correction$pseudo_single_fitted) > 0.5
+  pseudo_single_correction$outliers[id_out] <- pseudo_single_correction$ID[id_out]
   
   if (saveToFig) {
     display <- TRUE
     file_name_sys <- sprintf("%s%s_solutionSystem.%s", outdir, EXPname, saveFormat)
     file_name_out <- sprintf("%s%s_FC_vs_correctedFC.%s", outdir, EXPname, saveFormat)
-    file_name_corr <- sprintf("%s%s_corrections_collapsed_vs_pair.%s", outdir, EXPname, saveFormat)
+    file_name_corr <- sprintf("%s%s_corrections_pseudosingle_vs_pair.%s", outdir, EXPname, saveFormat)
   }
   
   if (display) {
     
-    pl_sys <- ggplot(collapsed_correction, aes(x = collapsed, 
-                                  y = collapsed_fitted, 
+    pl_sys <- ggplot(pseudo_single_correction, aes(x = pseudo_single, 
+                                  y = pseudo_single_fitted, 
                                   color = guide_pos, 
                                   label = outliers)) + 
       geom_point(alpha = 0.7, size = 2) +
@@ -1322,7 +1392,7 @@ ccr2.solveLinearSys <- function(
       geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") + 
       theme_bw() + 
       theme(legend.position = "right") + 
-      xlab("Collapsed dual correction") + ylab("Fitted correction")
+      xlab("Pseudo single correction") + ylab("Fitted correction")
     print(pl_sys)
     
     pl_out <- ggplot(dual_FC_correctedFC, aes(x = avgFC, 
@@ -1335,20 +1405,20 @@ ccr2.solveLinearSys <- function(
       xlab("Uncorrected logFC") + ylab("Corrected logFC")
     print(pl_out)
     
-    ### plot collapsed and pairwise correction ###
+    ### plot pseudo_single and pairwise correction ###
     dual_FC_corr_plot <- dual_FC_correctedFC[!is.na(dual_FC_correctedFC$correction), ]
-    dual_FC_corr_plot$correction_collaped_1 <- collapsed_correction$collapsed[match(dual_FC_corr_plot$sgRNA1_WGE_ID, collapsed_correction$sgRNA_ID)]
-    dual_FC_corr_plot$correction_collaped_2 <- collapsed_correction$collapsed[match(dual_FC_corr_plot$sgRNA2_WGE_ID, collapsed_correction$sgRNA_ID)]
+    dual_FC_corr_plot$correction_1 <- pseudo_single_correction$pseudo_single[match(dual_FC_corr_plot$sgRNA1_WGE_ID, pseudo_single_correction$sgRNA_ID)]
+    dual_FC_corr_plot$correction_2 <- pseudo_single_correction$pseudo_single[match(dual_FC_corr_plot$sgRNA2_WGE_ID, pseudo_single_correction$sgRNA_ID)]
     
     pl_corr <- ggplot(dual_FC_corr_plot, 
-                      mapping = aes(x = correction_collaped_1, 
-                                    y = correction_collaped_2, 
+                      mapping = aes(x = correction_1, 
+                                    y = correction_2, 
                                     color = correction)) + 
       geom_point() + 
       scale_color_viridis_c() + 
       theme_bw() + 
-      xlab("Correction collapsed pos 1") + 
-      ylab("Correction collapsed pos 2")
+      xlab("Correction pseudo single pos 1") + 
+      ylab("Correction pseudo single pos 2")
     print(pl_corr)
     
   }
@@ -1359,9 +1429,10 @@ ccr2.solveLinearSys <- function(
     ggsave(filename = file_name_corr, plot = pl_corr, width = 5, height = 4)
   }
   
-  return(list(dual_FC = dual_FC_correctedFC, 
-              collpased = collapsed_correction))
-  
+  return(list(
+    matrix_system = matrix_sys, 
+    dual_FC = dual_FC_correctedFC, 
+    pseudo_single = pseudo_single_correction))
 }
 
 #' Title
