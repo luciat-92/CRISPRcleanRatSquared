@@ -6,7 +6,7 @@
 \usage{
 ccr2.filterGWclean(
   dataInjection_correctedFCs,
-  dual_collapsed,
+  pseudo_single,
   guide_id,
   saveToFig = FALSE,
   display = TRUE,
@@ -18,7 +18,7 @@ ccr2.filterGWclean(
 \arguments{
 \item{dataInjection_correctedFCs}{}
 
-\item{dual_collapsed}{}
+\item{pseudo_single}{}
 
 \item{guide_id}{}
 
@@ -33,5 +33,5 @@ ccr2.filterGWclean(
 \item{EXPname}{}
 }
 \description{
-adjust ccr output applied to collapsed and filter per considered guide in dual
+adjust ccr output applied to pseudo single and filter per considered guide in dual
 }

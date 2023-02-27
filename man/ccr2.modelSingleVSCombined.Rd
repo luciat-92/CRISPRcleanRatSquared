@@ -5,8 +5,7 @@
 \title{Title}
 \usage{
 ccr2.modelSingleVSCombined(
-  dual_collapsed,
-  single_FC,
+  pseudo_single_FC,
   guide_id,
   correctGW = NULL,
   display = TRUE,
@@ -17,9 +16,7 @@ ccr2.modelSingleVSCombined(
 )
 }
 \arguments{
-\item{dual_collapsed}{}
-
-\item{single_FC}{}
+\item{pseudo_single_FC}{}
 
 \item{guide_id}{}
 

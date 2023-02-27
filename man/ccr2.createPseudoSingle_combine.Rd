@@ -6,6 +6,8 @@
 \usage{
 ccr2.createPseudoSingle_combine(
   dual_FC,
+  single_FC,
+  match_dual_single_seq,
   saveToFig = FALSE,
   display = TRUE,
   saveFormat = NULL,
@@ -15,6 +17,10 @@ ccr2.createPseudoSingle_combine(
 }
 \arguments{
 \item{dual_FC}{}
+
+\item{single_FC}{}
+
+\item{match_dual_single_seq}{}
 
 \item{saveToFig}{}
 

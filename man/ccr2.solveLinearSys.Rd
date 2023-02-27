@@ -6,8 +6,8 @@
 \usage{
 ccr2.solveLinearSys(
   dual_FC,
-  dual_collapsedG1_correctedFCs,
-  dual_collapsedG2_correctedFCs,
+  pseudo_single_p1_correctedFCs,
+  pseudo_single_p2_correctedFCs,
   display = TRUE,
   saveToFig = FALSE,
   saveFormat = "pdf",
@@ -18,9 +18,9 @@ ccr2.solveLinearSys(
 \arguments{
 \item{dual_FC}{}
 
-\item{dual_collapsedG1_correctedFCs}{}
+\item{pseudo_single_p1_correctedFCs}{}
 
-\item{dual_collapsedG2_correctedFCs}{}
+\item{pseudo_single_p2_correctedFCs}{}
 
 \item{display}{}
 

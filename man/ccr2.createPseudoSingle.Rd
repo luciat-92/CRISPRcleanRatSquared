@@ -4,10 +4,14 @@
 \alias{ccr2.createPseudoSingle}
 \title{Title}
 \usage{
-ccr2.createPseudoSingle(dual_FC, guide_id)
+ccr2.createPseudoSingle(dual_FC, single_FC, match_dual_single_seq, guide_id)
 }
 \arguments{
 \item{dual_FC}{}
+
+\item{single_FC}{}
+
+\item{match_dual_single_seq}{}
 
 \item{guide_id}{}
 }
