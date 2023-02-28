@@ -952,7 +952,7 @@ ccr2.createPseudoSingle_combine <- function(
 #' @export
 #'
 #' @examples
-ccr2.modelSingleVSCombined <- function(
+ccr2.modelSingleVSPseudoSingle <- function(
   pseudo_single_FC, 
   guide_id, 
   correctGW = NULL, 
@@ -1512,6 +1512,8 @@ ccr2.plotClasses <- function(
 #'
 ccr2.add_CNA <- function(CNA, dual_FC) { 
 
+  # TODO: match based on position (include intergenic regions)
+  
   dual_FC_withCNA <- dual_FC %>% 
     dplyr::filter(Gene1 %in% CNA$gene.symbol | Gene2 %in% CNA$gene.symbol) %>%
     dplyr::mutate(Gene1_CN = CNA$C[match(Gene1, CNA$gene.symbol)]) %>%
