@@ -205,7 +205,6 @@ get_input_data <- function(param_file) {
         sgRNA1_Chr = as.numeric(sgRNA1_Chr), 
         sgRNA2_Chr = as.numeric(sgRNA2_Chr)
         )
-  
   }
   
   CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
@@ -217,6 +216,10 @@ get_input_data <- function(param_file) {
       .default = as.character(CHROM))
     )
   
+  if ("Sampleid" %in% colnames(CNA)) {
+    CNA <- CNA %>% 
+      dplyr::filter(Sampleid %in% CL_name)
+  }
     
   return(list(CNA = CNA, 
               count = dual_count_list, 
