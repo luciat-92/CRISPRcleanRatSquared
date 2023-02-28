@@ -208,7 +208,7 @@ get_input_data <- function(param_file) {
   
   }
   
-  dual_CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
+  CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
                          show_col_types = FALSE) %>%
     dplyr::mutate(
       CHROM = dplyr::case_when(
@@ -218,7 +218,7 @@ get_input_data <- function(param_file) {
     )
   
     
-  return(list(CNA = dual_CNA, 
+  return(list(CNA = CNA, 
               count = dual_count_list, 
               library =  dual_library_list, 
               CL_name = CL_name, 
@@ -340,7 +340,6 @@ ccr2.get_summary_singletons <- function(dual_FC,
     dplyr::summarise(n_ID = dplyr::n()) %>%
     dplyr::arrange(desc(n_ID)) %>%
     dplyr::filter(n_ID > 30) %>% # how to set this??
-    #dplyr::slice_max(n_ID) %>% ## only working if the number is always the same! adjust
     dplyr::pull(sgRNA1_WGE_ID) %>%
     sort()
   
@@ -1591,7 +1590,7 @@ ccr2.add_CNA <- function(
 #' plot: distribution with respect to CN
 #'
 #' @param dual_FC_correctedFC 
-#' @param dual_CNA 
+#' @param CNA 
 #' @param saveToFig 
 #' @param saveFormat 
 #' @param outdir 
@@ -1605,7 +1604,7 @@ ccr2.add_CNA <- function(
 #' @examples
 ccr2.plotCNA <- function(
   dual_FC_correctedFC, 
-  dual_CNA, 
+  CNA, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
   outdir = "./", 
@@ -1614,7 +1613,7 @@ ccr2.plotCNA <- function(
   var_to_plot = "observed"
 ) {
   
-  dual_FC_withCNA <- ccr2.add_CNA(CNA = dual_CNA, dual_FC = dual_FC_correctedFC) %>%
+  dual_FC_withCNA <- ccr2.add_CNA(CNA = CNA, dual_FC = dual_FC_correctedFC) %>%
     dplyr::filter(!is.na(correction))
  
   if (var_to_plot == "observed") {
@@ -1704,7 +1703,7 @@ ccr2.plotCNA <- function(
 #' plot: density divided per max CNA threshold
 #'
 #' @param dual_FC_correctedFC 
-#' @param dual_CNA 
+#' @param CNA 
 #' @param saveToFig 
 #' @param saveFormat 
 #' @param outdir 
@@ -1719,7 +1718,7 @@ ccr2.plotCNA <- function(
 #' @examples
 ccr2.plotCNAdensity <- function(
   dual_FC_correctedFC, 
-  dual_CNA, 
+  CNA, 
   saveToFig = F, 
   saveFormat = "pdf",
   outdir = "./", 
@@ -1738,7 +1737,7 @@ ccr2.plotCNAdensity <- function(
     xlab_name <- var_to_plot
   }
   
-  dual_FC_withCNA <- ccr2.add_CNA(CNA = dual_CNA, dual_FC = dual_FC_correctedFC) %>%
+  dual_FC_withCNA <- ccr2.add_CNA(CNA = CNA, dual_FC = dual_FC_correctedFC) %>%
     dplyr::filter(!is.na(correction)) %>%
     dplyr::mutate(CN_class = dplyr::case_when(
       as.numeric(as.character(Gene1_CN)) >= !!(CN_thr) | 
@@ -2065,7 +2064,7 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC, corrected = FALSE,
 #' @param dual_count 
 #' @param correctGW 
 #' @param excludeGene_plot 
-#' @param dual_CNA 
+#' @param CNA 
 #' @param CN_thr 
 #'
 #' @return
@@ -2086,7 +2085,7 @@ ccr2.run_complete <- function(
   saveFormat = "pdf", 
   correctGW, 
   excludeGene_plot = NULL, 
-  dual_CNA, 
+  CNA, 
   CN_thr = 8
 ) {
   
@@ -2140,7 +2139,7 @@ ccr2.run_complete <- function(
     EXPname = EXPname)
   
   # collapse to single info, add single logFC results baesd on sequence matching
-  dual_FC_collpased <- ccr2.avgSingleGuides_combine(
+  dual_pseudo_single_FC <- ccr2.createPseudoSingle_combine(
     dual_FC = dual_FC, 
     single_FC = single_correctedFCs, 
     match_dual_single_seq = library_matched_seq, 
@@ -2150,13 +2149,12 @@ ccr2.run_complete <- function(
     outdir = outdir, 
     EXPname = EXPname)
   
-  print("Collpased dual screen")
+  print("Computed pseudo single")
   
   ##########################################################
   ### create model to convert single to multiple screens ###
-  dataInjection_guide1 <- ccr2.modelSingleVSCombined(
-    dual_collapsed = dual_FC_collpased$sgRNA1, 
-    single_FC = single_correctedFCs, 
+  model_guide1 <- ccr2.modelSingleVSPseudoSingle(
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA1,
     guide_id = 1, 
     display = display, 
     correctGW = correctGW, 
@@ -2165,9 +2163,8 @@ ccr2.run_complete <- function(
     outdir = outdir, 
     EXPname = EXPname)
   
-  dataInjection_guide2 <- ccr2.modelSingleVSCombined(
-    dual_collapsed = dual_FC_collpased$sgRNA2, 
-    single_FC = single_correctedFCs, 
+  model_guide2 <- ccr2.modelSingleVSPseudoSingle(
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
     guide_id = 2, 
     display = display, 
     correctGW = correctGW, 
@@ -2176,27 +2173,44 @@ ccr2.run_complete <- function(
     outdir = outdir, 
     EXPname = EXPname)
   
-  print("Converted FCs GW single to GW dual collapsed")
+  ### inject data ###
+  dataInjection_guide1 <- ccr2.injectData(
+    model_single_to_pseudo = model_guide1$model, 
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA1, 
+    single_FC = single_correctedFCs, 
+    guide_id = 1, 
+    correctGW = correctGW
+  )
+  
+  dataInjection_guide2 <- ccr2.injectData(
+    model_single_to_pseudo = model_guide1$model, 
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA2, 
+    single_FC = single_correctedFCs, 
+    guide_id = 2, 
+    correctGW = correctGW
+  )
+  
+  print("Injected data on pseudo single position 1 and 2 spaces")
   
   ##########################################
   ### apply CRISPRCleanR to single lines ###
   dataInjection_guide1_correctedFCs <- ccr.GWclean(
-    dataInjection_guide1$predict_single,
+    dataInjection_guide1,
     display = display, 
     label = sprintf("guide1_%s", EXPname), 
     saveTO = outdir)
   
   
   dataInjection_guide2_correctedFCs <- ccr.GWclean(
-    dataInjection_guide2$predict_single,
+    dataInjection_guide2,
     display = display, 
     label = sprintf("guide2_%s", EXPname), 
     saveTO = outdir)
   
   # consider only guides in dual screen
-  dual_collapsedG1_correctedFCs <- ccr2.filterGWclean(
+  pseudo_single_p1_correctedFCs <- ccr2.filterGWclean(
     dataInjection_correctedFCs = dataInjection_guide1_correctedFCs$corrected_logFCs,
-    dual_collapsed = dual_FC_collpased$sgRNA1,
+    pseudo_single = dual_pseudo_single_FC$sgRNA1,
     guide_id = 1, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
@@ -2204,9 +2218,9 @@ ccr2.run_complete <- function(
     EXPname = EXPname,
     display = display)
   
-  dual_collapsedG2_correctedFCs <- ccr2.filterGWclean(
+  pseudo_single_p2_correctedFCs <- ccr2.filterGWclean(
     dataInjection_correctedFCs = dataInjection_guide2_correctedFCs$corrected_logFCs,
-    dual_collapsed = dual_FC_collpased$sgRNA2, 
+    pseudo_single = dual_pseudo_single_FC$sgRNA2,
     guide_id = 2, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
@@ -2214,14 +2228,14 @@ ccr2.run_complete <- function(
     EXPname = EXPname,
     display = display)
   
-  print("CRISPRCleanR applied to GW dual collpased")
+  print("CRISPRcleanR applied to GW pseudo singles (position 1 and 2)")
   
   ##################################################
   ### solve linear system to get pair correction ###
   sys_solution <- ccr2.solveLinearSys(
     dual_FC = dual_FC, 
-    dual_collapsedG1_correctedFCs = dual_collapsedG1_correctedFCs, 
-    dual_collapsedG2_correctedFCs = dual_collapsedG2_correctedFCs, 
+    pseudo_single_p1_correctedFCs = pseudo_single_p1_correctedFCs, 
+    pseudo_single_p2_correctedFCs = pseudo_single_p2_correctedFCs, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
@@ -2267,7 +2281,7 @@ ccr2.run_complete <- function(
   # distribution wrt CN
   ccr2.plotCNA(
     dual_FC_correctedFC = dual_FC_correctedFC, 
-    dual_CNA = dual_CNA, 
+    CNA = CNA, 
     EXPname = EXPname, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
@@ -2275,7 +2289,7 @@ ccr2.run_complete <- function(
   
   ccr2.plotCNA(
     dual_FC_correctedFC = dual_FC_correctedFC, 
-    dual_CNA = dual_CNA, 
+    CNA = CNA, 
     EXPname = EXPname, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
@@ -2285,7 +2299,7 @@ ccr2.run_complete <- function(
   # density distribution for CN > 8 for any guide1 or guide2
   ccr2.plotCNAdensity(
     dual_FC_correctedFC = dual_FC_correctedFC, 
-    dual_CNA = dual_CNA, 
+    CNA = CNA, 
     CN_thr = CN_thr,  
     EXPname = EXPname, 
     saveToFig = saveToFig, 
@@ -2294,7 +2308,7 @@ ccr2.run_complete <- function(
   
   ccr2.plotCNAdensity(
     dual_FC_correctedFC = dual_FC_correctedFC, 
-    dual_CNA = dual_CNA, 
+    CNA = CNA, 
     CN_thr = CN_thr,  
     EXPname = EXPname, 
     saveToFig = saveToFig, 
@@ -2307,7 +2321,7 @@ ccr2.run_complete <- function(
     
     # exclude pairs including a gene
     ccr2.plotCNA(dual_FC_correctedFC = dual_FC_correctedFC, 
-                 dual_CNA = dual_CNA, 
+                 CNA = CNA, 
                  excludeGene = excludeGene_plot,  
                  EXPname = EXPname, 
                  saveToFig = saveToFig,
@@ -2315,7 +2329,7 @@ ccr2.run_complete <- function(
                  outdir = outdir)
     
     ccr2.plotCNA(dual_FC_correctedFC = dual_FC_correctedFC, 
-                 dual_CNA = dual_CNA, 
+                 CNA = CNA, 
                  excludeGene = excludeGene_plot,  
                  EXPname = EXPname, 
                  saveToFig = saveToFig, 
@@ -2324,7 +2338,8 @@ ccr2.run_complete <- function(
                  var_to_plot = "bliss_zscore")
     
     ccr2.plotCNAdensity(dual_FC_correctedFC = dual_FC_correctedFC, 
-                        dual_CNA = dual_CNA, excludeGene = excludeGene_plot, 
+                        CNA = CNA, 
+                        excludeGene = excludeGene_plot, 
                         CN_thr = CN_thr, 
                         EXPname = EXPname, 
                         saveToFig = saveToFig, 
@@ -2332,7 +2347,8 @@ ccr2.run_complete <- function(
                         outdir = outdir)
     
     ccr2.plotCNAdensity(dual_FC_correctedFC = dual_FC_correctedFC, 
-                        dual_CNA = dual_CNA, excludeGene = excludeGene_plot, 
+                        CNA = CNA, 
+                        excludeGene = excludeGene_plot, 
                         CN_thr = CN_thr, 
                         EXPname = EXPname, 
                         saveToFig = saveToFig, 
@@ -2347,7 +2363,7 @@ ccr2.run_complete <- function(
     dual_FC_correctedFC = dual_FC_correctedFC, 
     match_dual_single_seq = library_matched_seq, 
     single_correctedFCs = single_correctedFCs, 
-    CNA = dual_CNA,  
+    CNA = CNA,  
     EXPname = EXPname, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,

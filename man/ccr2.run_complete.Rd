@@ -18,7 +18,7 @@ ccr2.run_complete(
   saveFormat = "pdf",
   correctGW,
   excludeGene_plot = NULL,
-  dual_CNA,
+  CNA,
   CN_thr = 8
 )
 }
@@ -49,7 +49,7 @@ ccr2.run_complete(
 
 \item{excludeGene_plot}{}
 
-\item{dual_CNA}{}
+\item{CNA}{}
 
 \item{CN_thr}{}
 }

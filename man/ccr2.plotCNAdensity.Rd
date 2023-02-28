@@ -6,7 +6,7 @@
 \usage{
 ccr2.plotCNAdensity(
   dual_FC_correctedFC,
-  dual_CNA,
+  CNA,
   saveToFig = F,
   saveFormat = "pdf",
   outdir = "./",
@@ -19,7 +19,7 @@ ccr2.plotCNAdensity(
 \arguments{
 \item{dual_FC_correctedFC}{}
 
-\item{dual_CNA}{}
+\item{CNA}{}
 
 \item{saveToFig}{}
 

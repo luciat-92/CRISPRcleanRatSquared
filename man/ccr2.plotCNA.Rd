@@ -6,7 +6,7 @@
 \usage{
 ccr2.plotCNA(
   dual_FC_correctedFC,
-  dual_CNA,
+  CNA,
   saveToFig = FALSE,
   saveFormat = "pdf",
   outdir = "./",
@@ -18,7 +18,7 @@ ccr2.plotCNA(
 \arguments{
 \item{dual_FC_correctedFC}{}
 
-\item{dual_CNA}{}
+\item{CNA}{}
 
 \item{saveToFig}{}
 
