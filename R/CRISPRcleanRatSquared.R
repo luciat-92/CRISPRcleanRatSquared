@@ -2243,7 +2243,7 @@ ccr2.run_complete <- function(
     display = display)
   print("System solved, collpased correction converted to pairwise correction")
   
-  collapsed_correction <- sys_solution$collpased
+  pseudo_single_correction <- sys_solution$pseudo_single
   dual_FC_correctedFC <- sys_solution$dual_FC
   
   # add synergy from bliss model
@@ -2393,7 +2393,7 @@ ccr2.run_complete <- function(
               single = single_correctedFCs_filt,
               top_corrected = top_corrected, 
               top_uncorrected = top_uncorrected, 
-              system_solition = collapsed_correction))
+              system_solition = pseudo_single_correction))
   
 }
 
