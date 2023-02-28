@@ -209,8 +209,15 @@ get_input_data <- function(param_file) {
   }
   
   dual_CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
-                         show_col_types = FALSE)
+                         show_col_types = FALSE) %>%
+    dplyr::mutate(
+      CHROM = dplyr::case_when(
+      CHROM == "chrX" ~ "chr23",
+      CHROM == "chrY" ~ "chr24",
+      .default = as.character(CHROM))
+    )
   
+    
   return(list(CNA = dual_CNA, 
               count = dual_count_list, 
               library =  dual_library_list, 
@@ -1510,18 +1517,53 @@ ccr2.plotClasses <- function(
 #'
 #' @return
 #'
-ccr2.add_CNA <- function(CNA, dual_FC) { 
-
-  # TODO: match based on position (include intergenic regions)
+ccr2.add_CNA <- function(
+  CNA, 
+  dual_FC
+) { 
   
-  dual_FC_withCNA <- dual_FC %>% 
-    dplyr::filter(Gene1 %in% CNA$gene.symbol | Gene2 %in% CNA$gene.symbol) %>%
-    dplyr::mutate(Gene1_CN = CNA$C[match(Gene1, CNA$gene.symbol)]) %>%
-    dplyr::mutate(Gene2_CN = CNA$C[match(Gene2, CNA$gene.symbol)]) %>%
+  
+  # use GenomicRanges package to match
+  CNA <- CNA %>%
+    dplyr::mutate(dplyr::across("CHROM", .fns = \(x) 
+                                str_replace(x, pattern = "chr", replacement = "")))
+  
+  CNA_genom_range <- GenomicRanges::makeGRangesFromDataFrame(
+    CNA[, c("CHROM", "start", "end")],
+    seqnames.field = "CHROM",
+    start.field = "start",
+    end.field = "end")
+
+  pos1_genom_range <- makeGRangesFromDataFrame(
+    dual_FC[, c("sgRNA1_Chr", "sgRNA1_Start", "sgRNA1_End")],
+    seqnames.field = "sgRNA1_Chr",
+    start.field = "sgRNA1_Start",
+    end.field = "sgRNA1_End")
+  
+  pos2_genom_range <- makeGRangesFromDataFrame(
+    dual_FC[, c("sgRNA2_Chr", "sgRNA2_Start", "sgRNA2_End")],
+    seqnames.field = "sgRNA2_Chr",
+    start.field = "sgRNA2_Start",
+    end.field = "sgRNA2_End")
+  
+  pos1_overlap <- GenomicRanges::findOverlaps(
+    pos1_genom_range, 
+    CNA_genom_range)
+  
+  pos2_overlap <- GenomicRanges::findOverlaps(
+    pos2_genom_range, 
+    CNA_genom_range)
+  
+  dual_FC_withCNA <- dual_FC %>%
+    dplyr::mutate(Gene1_CN = NA, Gene2_CN = NA) 
+  dual_FC_withCNA$Gene1_CN[queryHits(pos1_overlap)] <- CNA$C[subjectHits(pos1_overlap)]
+  dual_FC_withCNA$Gene2_CN[queryHits(pos2_overlap)] <- CNA$C[subjectHits(pos2_overlap)]
+  
+  dual_FC_withCNA <- dual_FC_withCNA %>% 
     dplyr::mutate(
       Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
       Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
-      Prod_CN = Gene1_CN*Gene2_CN, 
+      Prod_CN = Gene1_CN * Gene2_CN, 
       Sum_CN = Gene1_CN + Gene2_CN) %>%
     dplyr::filter(!is.na(Prod_CN))
   dual_FC_withCNA$Max_CN <- mapply(function(x, y) max(x,y), 
@@ -1754,7 +1796,7 @@ ccr2.plotCNAdensity <- function(
 #' @param dual_FC_correctedFC 
 #' @param match_dual_single_seq 
 #' @param single_correctedFCs 
-#' @param dual_CNA 
+#' @param CNA 
 #' @param saveToFig 
 #' @param saveFormat 
 #' @param outdir 
@@ -1768,7 +1810,7 @@ ccr2.plotMatchingSingle <- function(
   dual_FC_correctedFC,  
   match_dual_single_seq, 
   single_correctedFCs, 
-  dual_CNA, 
+  CNA, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
   outdir = "./", 
@@ -1780,13 +1822,38 @@ ccr2.plotMatchingSingle <- function(
                         dual_FC_correctedFC$sgRNA2_WGE_ID[id_corr]))
   
   id_keep <-  match_dual_single_seq$ID_single[match_dual_single_seq$ID %in% unique_ID]
+  id_keep <- id_keep[!is.na(id_keep)]
   single_correctedFCs_filt <- single_correctedFCs[unique(id_keep), ]
   single_correctedFCs_filt <- single_correctedFCs_filt[!is.na(single_correctedFCs_filt$CHR), ]
   
-  FC_withCNA <- single_correctedFCs_filt %>% 
-    dplyr::filter(genes %in% dual_CNA$gene.symbol) %>%
-    dplyr::mutate(Gene_CN = dual_CNA$C[match(genes, dual_CNA$gene.symbol)]) %>%
-    dplyr::mutate(Gene_CN = dplyr::case_when(Gene_CN > 9 ~ 8, TRUE ~ round(Gene_CN)))
+  # match with CNA info
+  CNA <- CNA %>%
+    dplyr::mutate(dplyr::across("CHROM", .fns = \(x) 
+                                str_replace(x, pattern = "chr", replacement = "")))
+  
+  CNA_genom_range <- GenomicRanges::makeGRangesFromDataFrame(
+    CNA[, c("CHROM", "start", "end")],
+    seqnames.field = "CHROM",
+    start.field = "start",
+    end.field = "end")
+  
+  single_genom_range <- makeGRangesFromDataFrame(
+    single_correctedFCs_filt[, c("CHR", "startp", "endp")],
+    seqnames.field = "CHR",
+    start.field = "startp",
+    end.field = "endp")
+  
+  overlap <- GenomicRanges::findOverlaps(
+    single_genom_range, 
+    CNA_genom_range)
+  
+  FC_withCNA <- single_correctedFCs_filt %>%
+    dplyr::mutate(Gene_CN = NA) 
+  FC_withCNA$Gene_CN[queryHits(overlap)] <- CNA$C[subjectHits(overlap)]
+  FC_withCNA <- FC_withCNA %>%
+    dplyr::mutate(Gene_CN = dplyr::case_when(
+      Gene_CN > 9 ~ 8, TRUE ~ round(Gene_CN)
+      ))
   
   df_plot <- data.frame(
     logFC = c(FC_withCNA$avgFC, FC_withCNA$correctedFC), 
@@ -1833,7 +1900,7 @@ ccr2.plotMatchingSingle <- function(
     ggsave(filename =  file_name_CN, plot = pl_CN, width = 4, height = 4)
   }
   
-  return(single_correctedFCs_filt)
+  return(FC_withCNA)
 }
 
 #' Title
@@ -2280,7 +2347,7 @@ ccr2.run_complete <- function(
     dual_FC_correctedFC = dual_FC_correctedFC, 
     match_dual_single_seq = library_matched_seq, 
     single_correctedFCs = single_correctedFCs, 
-    dual_CNA = dual_CNA,  
+    CNA = dual_CNA,  
     EXPname = EXPname, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
