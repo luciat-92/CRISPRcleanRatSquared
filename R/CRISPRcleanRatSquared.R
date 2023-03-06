@@ -705,6 +705,7 @@ ccr2.NormfoldChanges <- function(
   # remove column already normalized and logFC
   counts <- Dframe %>% 
     dplyr::select(-dplyr::ends_with("_norm"), -dplyr::ends_with("_logFC"))
+  # TODO: check that the correct columns are selected (possibly not by number)
   info <- counts[, 1:8]
   counts <- counts[, 9:ncol(counts)]
   # remove pairs with less than min_reads in plasmid
