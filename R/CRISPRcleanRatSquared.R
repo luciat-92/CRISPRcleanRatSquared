@@ -415,6 +415,7 @@ ccr2.get_summary_singletons <- function(dual_FC,
 #' @examples
 ccr2.scale_pos_neg <- function(dual_FC, corrected = FALSE){
   
+  dual_FC_original <- dual_FC
   dual_FC <- dual_FC[!is.na(dual_FC$correction),]
   
   name_var <- "avgFC"
@@ -428,6 +429,12 @@ ccr2.scale_pos_neg <- function(dual_FC, corrected = FALSE){
     dplyr::mutate(tmp = get(name_var)) %>%
     dplyr::mutate(tmp_scaled = (tmp - median_neg)/(median_neg - median_pos)) %>%
     dplyr::select(-tmp)
+  
+  # add non-target / non-target
+  dual_FC_missing <- dual_FC_original %>%
+    dplyr::filter(!ID %in% dual_FC$ID) %>%
+    dplyr::mutate(tmp_scaled = NA)
+  dual_FC <- rbind(dual_FC, dual_FC_missing)
   
   if (corrected) {
     dual_FC <- dual_FC %>% 
@@ -818,6 +825,7 @@ ccr2.createPseudoSingle <- function(
   #                  ((grepl("NONTARGET", Gene2) | grepl("CTRL", Gene2)) & sgRNA1_WGE_ID %in% match_dual_single_seq$ID))
   
   var <- sprintf("sgRNA%i", guide_id)
+  other_var <- setdiff(c("sgRNA1", "sgRNA2"), sprintf("sgRNA%i", guide_id))
   
   guide <- guide %>% 
     dplyr::filter(!is.na(!!sym(sprintf("%s_BP", var)))) %>% 
@@ -827,6 +835,7 @@ ccr2.createPseudoSingle <- function(
                      genes = unique(!!sym(sprintf("Gene%i", guide_id))), 
                      avgFC = mean(avgFC), 
                      n = dplyr::n(), 
+                     matched_sgRNA_ID = paste0(sort(!!sym(sprintf("%s_WGE_ID", other_var))), collapse = ","),
                      #lib = paste0(unique(lib), collapse = ","),
                      CHR =  unique(!!sym(sprintf("%s_Chr", var))), 
                      startp = unique(!!sym(sprintf("%s_Start", var))), 
@@ -911,27 +920,45 @@ ccr2.createPseudoSingle_combine <- function(
     common_guides <- dplyr::inner_join(guide1, guide2, by = "sgRNA_ID")
     
     if (nrow(common_guides) > 0) {
-      breaks_size1 <- round(seq(min(common_guides$n.x), 
-                                max(common_guides$n.x), length.out = 6))
-      breaks_size2 <- round(seq(min(common_guides$n.y), 
-                                max(common_guides$n.y), length.out = 6))
-      text_corr <- data.frame(label = sprintf("Pear. corr. = %.3f", 
-                                              cor(common_guides$avgFC.x, common_guides$avgFC.y)), 
-                              xpos = -Inf, ypos = Inf)
+      
+      matched_ID_1 <- lapply(common_guides$matched_sgRNA_ID.x, 
+                             function(x) str_split(x, pattern = ",")[[1]])
+      matched_ID_2 <- lapply(common_guides$matched_sgRNA_ID.y, 
+                             function(x) str_split(x, pattern = ",")[[1]])
+      common_guides$jaccard_sim <- mapply(
+        function(x,y) length(intersect(x,y))/length(union(x,y)), 
+        x = matched_ID_1, y = matched_ID_2, SIMPLIFY = TRUE
+        )
+      breaks_size <- round(seq(min(common_guides$jaccard_sim), 
+                                max(common_guides$jaccard_sim), length.out = 6), 
+                            digits = 2)
+      
+      #breaks_size1 <- round(seq(min(common_guides$n.x), 
+      #                          max(common_guides$n.x), length.out = 6))
+      #breaks_size2 <- round(seq(min(common_guides$n.y), 
+      #                          max(common_guides$n.y), length.out = 6))
+      text_corr <- data.frame(
+        label = sprintf("Pear. corr. = %.3f", 
+                        cor(common_guides$avgFC.x, common_guides$avgFC.y)), 
+        xpos = -Inf, 
+        ypos = Inf)
       
       pl <- ggplot(common_guides, aes(x = avgFC.x, y = avgFC.y, 
-                                      size = n.x, color = n.y)) + 
-        geom_point(alpha = 0.5) +
+                                      color = jaccard_sim)) + 
+        geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+        geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+        geom_point(alpha = 0.5, size = 2) +
         theme_bw() + 
         theme(legend.position = "right", plot.title = element_text(hjust = 0.5)) + 
-        scale_colour_viridis_c(breaks = breaks_size2) +
-        scale_size_continuous(breaks = breaks_size1) + 
+        scale_colour_viridis_c(breaks = breaks_size) +
+        # scale_size_continuous(breaks = breaks_size1) + 
         geom_text(data = text_corr, 
                   aes(label = label, x = xpos, y = ypos), size = 5, 
                   hjust = -0.1, vjust = 1.1, inherit.aes = F) +
-        xlab("Psuedo single guide position 1") + ylab("Pseudo single guide position 2") + 
-        labs(color = "N. position1", size = "N. position2") + 
-        ggtitle("Guides in common")
+        xlab("Psuedo single guide position 1") + 
+        ylab("Pseudo single guide position 2") + 
+        labs(color = "Jaccard Sim.\n(matched guides)") + 
+        ggtitle(sprintf("Guides in common (N=%i)", nrow(common_guides)))
       print(pl)
     }
     
@@ -1026,19 +1053,23 @@ ccr2.modelSingleVSPseudoSingle <- function(
   
   if (display) {
     
-    breaks_size <- round(seq(min(df_plot$n_guides_in_mean), 
-                             max(df_plot$n_guides_in_mean), length.out = 6))
+    n_min <- min(df_plot$n_guides_in_mean)
+    n_max <- max(df_plot$n_guides_in_mean)
+    breaks_size <- round(seq(n_min, 
+                             n_max, length.out = 6))
     text_corr <- data.frame(
       label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC_single, df_plot$avgFC)), 
       xpos = -Inf, 
       ypos = Inf)
     
     pl_comp <- ggplot(df_plot, aes(x = avgFC_single, y = avgFC)) + 
-      geom_point(aes(y = avgFC, size = n_guides_in_mean, color = n_guides_in_mean), 
-                 alpha = 0.5) +
       geom_line(aes(y =  fitted_avgFC), colour = "red", linewidth = 1) + 
       geom_abline(intercept = 0, slope = 1, 
                   colour = "black", size = 1, linetype = "dashed") + 
+      geom_point(aes(y = avgFC, 
+                     # size = n_guides_in_mean, 
+                     color = n_guides_in_mean), 
+                 alpha = 0.5) +
       #geom_smooth(formula = y ~ 0 + x, method = "loess", 
       #            span = 0.3, 
       #            method.args = list(degree = 2)) + 
@@ -1046,7 +1077,7 @@ ccr2.modelSingleVSPseudoSingle <- function(
       theme(legend.position = "right", 
             plot.title = element_text(hjust = 0.5)) + 
       scale_colour_viridis_c(breaks = breaks_size) +
-      scale_size_continuous(breaks = breaks_size) + 
+      # scale_size_continuous(breaks = breaks_size) + 
       geom_text(data = text_corr, 
                 aes(label = label, x = xpos, y = ypos), size = 5, 
                 hjust = -0.1, vjust = 1.1, inherit.aes = F) +
@@ -1060,19 +1091,19 @@ ccr2.modelSingleVSPseudoSingle <- function(
     df_plot$outliers[abs(df_plot$residuals_avgFC) > 10] <- df_plot$id[abs(df_plot$residuals_avgFC) > 10]
     pl_pred_vs_res <- ggplot(df_plot, aes(x = fitted_avgFC, 
                                           y = residuals_avgFC)) + 
-      geom_point(aes(y = residuals_avgFC, 
-                     size = n_guides_in_mean, 
-                     color = n_guides_in_mean), 
-                     alpha = 0.5) +
       geom_text_repel(color = "black", aes(label = outliers), 
                       min.segment.length = 0, size = 3) + 
       geom_hline(yintercept = 0, colour = "black", size = 1, linetype = "dashed") + 
       geom_smooth(formula = y ~ x, method = "loess") +
+      geom_point(aes(y = residuals_avgFC, 
+                     #size = n_guides_in_mean, 
+                     color = n_guides_in_mean), 
+                 alpha = 0.5) +
       theme_bw() + 
       theme(legend.position = "right", 
             plot.title = element_text(hjust = 0.5)) + 
       scale_colour_viridis_c(breaks = breaks_size) +
-      scale_size_continuous(breaks = breaks_size) + 
+      #scale_size_continuous(breaks = breaks_size) + 
       ylab("Residuals") + 
       xlab("Fitted avgFC") + 
       ggtitle(sprintf("Guide position %i", guide_id))
@@ -1525,6 +1556,9 @@ ccr2.add_CNA <- function(
   dual_FC
 ) { 
   
+  # remove pairs with NA chr (nontarget)
+  dual_FC <- dual_FC %>%
+    dplyr::filter(!is.na(sgRNA1_Chr) & !is.na(sgRNA2_Chr))
   
   # use GenomicRanges package to match
   CNA <- CNA %>%
@@ -2055,98 +2089,43 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC, corrected = FALSE,
 
 #' Title
 #'
-#' @param filename_single 
-#' @param min_reads_single 
 #' @param EXPname 
-#' @param libraryAnnotation_single 
 #' @param display 
 #' @param outdir 
-#' @param min_reads 
 #' @param saveToFig 
 #' @param saveFormat 
 #' @param libraryAnnotation_dual 
-#' @param dual_count 
-#' @param correctGW 
-#' @param excludeGene_plot 
-#' @param CNA 
-#' @param CN_thr 
+#' @param dual_FC
+#' @param single_correctedFCs 
+#' @param match_dual_single_seq 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-ccr2.run_complete <- function(
-  filename_single, 
-  min_reads_single = 30,
-  libraryAnnotation_single,  
-  min_reads = 30, 
+ccr2.run <- function(
+  single_correctedFCs, 
   libraryAnnotation_dual, 
-  dual_count, 
-  EXPname,
-  display = FALSE, 
+  dual_FC,
+  match_dual_single_seq, 
+  EXPname = "",
+  saveToFig = FALSE, 
+  display = TRUE, 
+  saveFormat = NULL, 
   outdir = "./", 
-  saveToFig, 
-  saveFormat = "pdf", 
-  correctGW, 
-  excludeGene_plot = NULL, 
-  CNA, 
-  CN_thr = 8
+  correctGW
 ) {
   
-  #################################
-  ### get single screens output ###
+  # exclude non-target pairs
+  id_nontarget <- grepl("NONTARGET", dual_FC$info_subtype)
+  dual_FC <- dual_FC[!id_nontarget,]
   
-  single_screen <- ccr.run_complete(
-    filename_single = filename_single, 
-    min_reads_single = min_reads_single,
-    EXPname = EXPname, 
-    libraryAnnotation_single = libraryAnnotation_single, 
-    display = display, 
-    outdir = outdir)
-  
-  single_correctedFCs <- single_screen$FC
-  libraryAnnotation_single <- single_screen$library
-  
-  print("Processed single screen")
-  
-  #########################################################
-  ### match single and dual libraries based on sequence ###
-  library_matched_seq <- ccr2.matchDualandSingleSeq(
-    dual_library = libraryAnnotation_dual, 
-    single_library = libraryAnnotation_single)
-  
-  print("Matched single and dual libraries")
-  
-  ###############################      
-  ### get dual screen output ###
-  dual_FC <- ccr2.NormfoldChanges(
-    Dframe = dual_count, 
-    min_reads = min_reads)
-  
-  dual_FC <- ccr2.logFCs2chromPos(
-    dual_FC = dual_FC$logFCs, 
-    dual_library = libraryAnnotation_dual)
-  
-  # get singletons averages:
-  singletons_summary <- ccr2.get_summary_singletons(
-    dual_FC = dual_FC)
-  
-  # plot comparison with single screen
-  merged_singletons_single <- ccr2.match_singletons_singleFC(
-    match_dual_single_seq = library_matched_seq, 
-    single_FC = single_correctedFCs, 
-    singletons_summary_FC = singletons_summary,
-    saveToFig = saveToFig, 
-    display = display, 
-    saveFormat = saveFormat,
-    outdir = outdir, 
-    EXPname = EXPname)
-  
+  ### create pseudo single scores ###
   # collapse to single info, add single logFC results baesd on sequence matching
   dual_pseudo_single_FC <- ccr2.createPseudoSingle_combine(
     dual_FC = dual_FC, 
     single_FC = single_correctedFCs, 
-    match_dual_single_seq = library_matched_seq, 
+    match_dual_single_seq = match_dual_single_seq, 
     saveToFig = saveToFig, 
     display = display,  
     saveFormat = saveFormat,
@@ -2249,6 +2228,280 @@ ccr2.run_complete <- function(
   
   pseudo_single_correction <- sys_solution$pseudo_single
   dual_FC_correctedFC <- sys_solution$dual_FC
+  
+  return(
+    list(pseudo_single = pseudo_single_correction, 
+        dual_FC = dual_FC_correctedFC)
+    )
+}
+
+
+#' Title
+#'
+#' @param EXPname 
+#' @param display 
+#' @param outdir 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param libraryAnnotation_dual 
+#' @param dual_FC
+#' @param single_correctedFCs 
+#' @param match_dual_single_seq 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.run_nontarget <- function(
+  single_correctedFCs, 
+  libraryAnnotation_dual, 
+  dual_FC,
+  match_dual_single_seq, 
+  EXPname = "",
+  saveToFig = FALSE, 
+  display = TRUE, 
+  saveFormat = NULL, 
+  outdir = "./", 
+  correctGW
+) {
+  
+  # process only gene_nontarget or nontarget_gene
+  id_nontarget <- grepl("NONTARGET", dual_FC$info_subtype) & 
+    dual_FC$info_subtype != "NONTARGET-NONTARGET"
+  
+  dual_FC_nt <- dual_FC[id_nontarget,]
+  
+  dual_pseudo_single_FC <- ccr2.createPseudoSingle_combine(
+    dual_FC = dual_FC_nt, 
+    single_FC = single_correctedFCs, 
+    match_dual_single_seq = match_dual_single_seq,
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
+    EXPname = EXPname)
+  
+  model_guide1 <- ccr2.modelSingleVSPseudoSingle(
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA1,
+    guide_id = 1, 
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
+    EXPname = EXPname)
+  
+  model_guide2 <- ccr2.modelSingleVSPseudoSingle(
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
+    guide_id = 2, 
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
+    EXPname = EXPname)
+  
+  ### inject data ###
+  dataInjection_guide1 <- ccr2.injectData(
+    model_single_to_pseudo = model_guide1$model, 
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA1, 
+    single_FC = single_correctedFCs, 
+    guide_id = 1, 
+    correctGW = correctGW
+  )
+  
+  dataInjection_guide2 <- ccr2.injectData(
+    model_single_to_pseudo = model_guide1$model, 
+    pseudo_single_FC = dual_pseudo_single_FC$sgRNA2, 
+    single_FC = single_correctedFCs, 
+    guide_id = 2, 
+    correctGW = correctGW
+  )
+  
+  ### apply CRISPRCleanR to single lines ###
+  dataInjection_guide1_correctedFCs <- ccr.GWclean(
+    dataInjection_guide1,
+    display = display, 
+    label = sprintf("guide1_%s", EXPname), 
+    saveTO = sprintf("%sNONTARGET_PAIR_", outdir))
+  
+  dataInjection_guide2_correctedFCs <- ccr.GWclean(
+    dataInjection_guide2,
+    display = display, 
+    label = sprintf("guide2_%s", EXPname), 
+    saveTO = sprintf("%sNONTARGET_PAIR_", outdir))
+  
+  # consider only guides in dual screen
+  pseudo_single_p1_correctedFCs <- ccr2.filterGWclean(
+    dataInjection_correctedFCs = dataInjection_guide1_correctedFCs$corrected_logFCs,
+    pseudo_single = dual_pseudo_single_FC$sgRNA1,
+    guide_id = 1, 
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
+    EXPname = EXPname)
+  
+  pseudo_single_p2_correctedFCs <- ccr2.filterGWclean(
+    dataInjection_correctedFCs = dataInjection_guide2_correctedFCs$corrected_logFCs,
+    pseudo_single = dual_pseudo_single_FC$sgRNA2,
+    guide_id = 2, 
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
+    EXPname = EXPname)
+  
+  # assign results
+  dual_FC_nt <- dual_FC_nt %>% 
+    dplyr::mutate(sgRNA_ID_pair = paste0(sgRNA1_WGE_ID, "~", sgRNA2_WGE_ID))
+  
+  tmp1 <- pseudo_single_p1_correctedFCs %>% 
+    dplyr::select(sgRNA_ID, correction) %>%
+    dplyr::mutate(sgRNA_ID_pair = dual_FC_nt$sgRNA_ID_pair[match(sgRNA_ID, dual_FC_nt$sgRNA1_WGE_ID)]) %>%
+    dplyr::select(-sgRNA_ID)
+  
+  tmp2 <- pseudo_single_p2_correctedFCs %>% 
+    dplyr::select(sgRNA_ID, correction) %>%
+    dplyr::mutate(sgRNA_ID_pair = dual_FC_nt$sgRNA_ID_pair[match(sgRNA_ID, dual_FC_nt$sgRNA2_WGE_ID)]) %>%
+    dplyr::select(-sgRNA_ID)
+  
+  df_corr <- rbind(tmp1, tmp2)
+  dual_FC_correctedFC <- dplyr::left_join(dual_FC_nt, df_corr) %>%
+    dplyr::mutate(correctedFC = avgFC + correction)
+  
+  return(dual_FC_correctedFC)
+  
+}
+
+
+#' Title
+#'
+#' @param filename_single 
+#' @param min_reads_single 
+#' @param EXPname 
+#' @param libraryAnnotation_single 
+#' @param display 
+#' @param outdir 
+#' @param min_reads 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param libraryAnnotation_dual 
+#' @param dual_count 
+#' @param correctGW 
+#' @param excludeGene_plot 
+#' @param CNA 
+#' @param CN_thr 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ccr2.run_complete <- function(
+  filename_single, 
+  min_reads_single = 30,
+  libraryAnnotation_single,  
+  min_reads = 30, 
+  libraryAnnotation_dual, 
+  dual_count, 
+  EXPname,
+  display = FALSE, 
+  outdir = "./", 
+  saveToFig, 
+  saveFormat = "pdf", 
+  correctGW, 
+  excludeGene_plot = NULL, 
+  CNA, 
+  CN_thr = 8
+) {
+  
+  #################################
+  ### get single screens output ###
+  
+  single_screen <- ccr.run_complete(
+    filename_single = filename_single, 
+    min_reads_single = min_reads_single,
+    EXPname = EXPname, 
+    libraryAnnotation_single = libraryAnnotation_single, 
+    display = display, 
+    outdir = outdir)
+  
+  single_correctedFCs <- single_screen$FC
+  libraryAnnotation_single <- single_screen$library
+  
+  print("Processed single screen")
+  
+  #########################################################
+  ### match single and dual libraries based on sequence ###
+  library_matched_seq <- ccr2.matchDualandSingleSeq(
+    dual_library = libraryAnnotation_dual, 
+    single_library = libraryAnnotation_single)
+  
+  print("Matched single and dual libraries")
+  
+  ###############################      
+  ### get dual screen output ###
+  dual_FC <- ccr2.NormfoldChanges(
+    Dframe = dual_count, 
+    min_reads = min_reads)
+  
+  dual_FC <- ccr2.logFCs2chromPos(
+    dual_FC = dual_FC$logFCs, 
+    dual_library = libraryAnnotation_dual)
+  
+  # get singletons averages:
+  singletons_summary <- ccr2.get_summary_singletons(
+    dual_FC = dual_FC)
+  
+  # plot comparison with single screen
+  merged_singletons_single <- ccr2.match_singletons_singleFC(
+    match_dual_single_seq = library_matched_seq, 
+    single_FC = single_correctedFCs, 
+    singletons_summary_FC = singletons_summary,
+    saveToFig = saveToFig, 
+    display = display, 
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname)
+  
+  #############################################################################
+  ### get correction for pairs with NONTARGET, use pseudo single correction ###
+  dual_FC_nt_correctedFC <- ccr2.run_nontarget(
+    dual_FC = dual_FC, 
+    match_dual_single_seq = library_matched_seq, 
+    single_correctedFCs = single_correctedFCs, 
+    libraryAnnotation_dual = libraryAnnotation_dual, 
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname, 
+    correctGW = correctGW
+  )
+  
+  ##########################################
+  ### get correction for pairs targeting ###
+  tmp <- ccr2.run(
+    dual_FC = dual_FC, 
+    match_dual_single_seq = library_matched_seq, 
+    single_correctedFCs = single_correctedFCs, 
+    libraryAnnotation_dual = libraryAnnotation_dual, 
+    saveToFig = saveToFig, 
+    display = display,  
+    saveFormat = saveFormat,
+    outdir = outdir, 
+    EXPname = EXPname, 
+    correctGW = correctGW
+  )
+  dual_FC_correctedFC <- tmp$dual_FC
+  pseudo_single_correction <- tmp$pseudo_single
+  
+  # combine all res 
+  dual_FC_correctedFC <- rbind(dual_FC_correctedFC, dual_FC_nt_correctedFC)
+  # add non-target / non-target
+  dual_FC_missing <- dual_FC %>% 
+    dplyr::filter(!ID %in% dual_FC_correctedFC$ID) %>%
+    dplyr::mutate(sgRNA_ID_pair = paste0(sgRNA1_WGE_ID, "~", sgRNA2_WGE_ID),
+                  correction = NA, correctedFC = NA)
+  dual_FC_correctedFC <- rbind(dual_FC_correctedFC, dual_FC_missing)
   
   # add synergy from bliss model
   dual_FC_correctedFC <- ccr2.compute_bliss(
