@@ -13,6 +13,8 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.0
 Depends: CRISPRcleanR, 
-  ggrepel
-Imports: readr
+  ggrepel, 
+  Matrix
+Imports: readr, 
+  sparsesvd
 Suggests: lintr

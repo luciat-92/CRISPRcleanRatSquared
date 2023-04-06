@@ -1369,8 +1369,12 @@ ccr2.solveLinearSys <- function(
   correction_vect <- c(pseudo_single_p1_correctedFCs$correction_scaled[!id_rm_row], 
                        pseudo_single_p2_correctedFCs$correction_scaled[!id_rm_col])
   
-  # the matrix is very sparse, 
-  time_solve <- system.time(correction_pair <- MASS::ginv(matrix_sys) %*% correction_vect)
+  # the matrix is very sparse,
+  # time_solve <- system.time(correction_pair <- MASS::ginv(matrix_sys) %*% correction_vect)
+  sparse_matrix_sys <- Matrix(matrix_sys, sparse = TRUE)
+  print(length(sparse_matrix_sys@i))
+  time_solve <- system.time(sparse_inv <- spginv(sparse_matrix_sys))
+  correction_pair <- sparse_inv %*% correction_vect
   print(sprintf("system solved after: %.2fs", time_solve[3]))
   
   # save output
@@ -2656,4 +2660,21 @@ ccr2.run_complete <- function(
               system_solition = pseudo_single_correction))
   
 }
+
+#' Title
+#'
+#' @param x 
+#'
+#' @return
+#'
+spginv <- function(x) {
+  Xsvd <- sparsesvd::sparsesvd(x)
+  Positive <- Xsvd$d > max(sqrt(.Machine$double.eps) * Xsvd$d[1L], 0)
+  if (all(Positive))
+    Xsvd$v %*% (1/Xsvd$d * t(Xsvd$u))
+  else if (!any(Positive))
+    array(0, dim(x)[2L:1L])
+  else Xsvd$v[, Positive, drop = FALSE] %*% ((1/Xsvd$d[Positive]) * t(Xsvd$u[, Positive, drop = FALSE]))
+}
+
 
