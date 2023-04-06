@@ -8,7 +8,7 @@ ccr2.plotMatchingSingle(
   dual_FC_correctedFC,
   match_dual_single_seq,
   single_correctedFCs,
-  dual_CNA,
+  CNA,
   saveToFig = FALSE,
   saveFormat = "pdf",
   outdir = "./",
@@ -22,7 +22,7 @@ ccr2.plotMatchingSingle(
 
 \item{single_correctedFCs}{}
 
-\item{dual_CNA}{}
+\item{CNA}{}
 
 \item{saveToFig}{}
 

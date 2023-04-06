@@ -6,19 +6,20 @@
 \usage{
 ccr2.plotCNAdensity(
   dual_FC_correctedFC,
-  dual_CNA,
+  CNA,
   saveToFig = F,
   saveFormat = "pdf",
   outdir = "./",
   EXPname = "",
   excludeGene = NULL,
-  CN_thr
+  CN_thr,
+  var_to_plot = "observed"
 )
 }
 \arguments{
 \item{dual_FC_correctedFC}{}
 
-\item{dual_CNA}{}
+\item{CNA}{}
 
 \item{saveToFig}{}
 
@@ -31,6 +32,8 @@ ccr2.plotCNAdensity(
 \item{excludeGene}{}
 
 \item{CN_thr}{}
+
+\item{var_to_plot}{}
 }
 \description{
 plot: density divided per max CNA threshold
