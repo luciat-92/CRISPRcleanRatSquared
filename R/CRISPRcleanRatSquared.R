@@ -1074,14 +1074,16 @@ ccr2.modelSingleVSPseudoSingle <- function(
       #            span = 0.3, 
       #            method.args = list(degree = 2)) + 
       theme_bw() + 
-      theme(legend.position = "right", 
+      theme(axis.title = element_text(size = 12), 
+            axis.text = element_text(size = 11), 
+            legend.position = "bottom", 
             plot.title = element_text(hjust = 0.5)) + 
       scale_colour_viridis_c(breaks = breaks_size) +
       # scale_size_continuous(breaks = breaks_size) + 
       geom_text(data = text_corr, 
                 aes(label = label, x = xpos, y = ypos), size = 5, 
                 hjust = -0.1, vjust = 1.1, inherit.aes = F) +
-      ylab("Pseudo single avgFC") + 
+      ylab("Pseudo Single avgFC") + 
       xlab("Single avgFC") + 
       ggtitle(sprintf("Guide position %i", guide_id))
     print(pl_comp)
@@ -1136,7 +1138,7 @@ ccr2.modelSingleVSPseudoSingle <- function(
   }
   
   if (saveToFig) {
-    ggsave(filename = file_name_comp, plot = pl_comp, width = 6, height = 5)
+    ggsave(filename = file_name_comp, plot = pl_comp, width = 4.5, height = 5.5)
     ggsave(filename = file_name_resid, plot = pl_pred_vs_res, width = 6, height = 5)
     ggsave(filename = file_name_qqplot, plot = pl_qq, width = 5, height = 5)
   }
@@ -1691,7 +1693,7 @@ ccr2.plotCNA <- function(
   
   pl_CN <- ggplot(df_plot, aes(x = Max_CN, y = logFC, 
                                fill = type)) + 
-    geom_boxplot() + 
+    geom_boxplot(outlier.size = 1) + 
     # geom_jitter(position = position_jitter(width = 0.05), size = 0.5) +
     geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
     theme_bw() + 
@@ -1699,8 +1701,9 @@ ccr2.plotCNA <- function(
     #stat_summary(fun = mean, geom = "point", aes(group = type), color = "red") +
     # geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
     theme(axis.text = element_text(size = 12),
+          legend.title = element_blank(),
           legend.position = "bottom", 
-          axis.text.x = element_text(angle = 45, hjust = 1)) +
+          axis.text.x = element_text(angle = 0, hjust = 1)) +
     scale_fill_brewer(palette = "Paired") +
     xlab("Max CN guide1 & guide2") + 
     ylab(ylab_name) + 
@@ -1730,7 +1733,7 @@ ccr2.plotCNA <- function(
                                outdir, EXPname, ylab_name, add_to_name, saveFormat)
     file_name_combCN <- sprintf("%s%s_CombCN_vs_%s%s.%s", 
                                 outdir, EXPname, ylab_name, add_to_name, saveFormat)
-    ggsave(filename = file_name_maxCN, plot = pl_CN, width = 6, height = 6)
+    ggsave(filename = file_name_maxCN, plot = pl_CN, width = 5, height = 4.5)
     ggsave(filename = file_name_combCN, plot = pl_CN_comb, width = 9, height = 7)
   }
   
@@ -1780,7 +1783,7 @@ ccr2.plotCNAdensity <- function(
     dplyr::mutate(CN_class = dplyr::case_when(
       as.numeric(as.character(Gene1_CN)) >= !!(CN_thr) | 
       as.numeric(as.character(Gene2_CN)) >= !!(CN_thr) ~ 
-        sprintf("CN guide1 or guide2 > %i", CN_thr), 
+        sprintf("CN guide1 or guide2 >= %i", CN_thr), 
       TRUE ~ "Others"))
 
   df_plot <- data.frame(
@@ -1821,7 +1824,7 @@ ccr2.plotCNAdensity <- function(
   if (saveToFig) {
     file_name <- sprintf("%s%s_density%s_highCN%s.%s", 
                          outdir, EXPname, xlab_name, add_to_name, saveFormat)
-    ggplot2::ggsave(filename =  file_name, plot = pl, width = 6, height = 6)
+    ggplot2::ggsave(filename =  file_name, plot = pl, width = 5, height = 5)
   }
   
 }
