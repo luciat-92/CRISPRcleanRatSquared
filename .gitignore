@@ -4,3 +4,4 @@
 .Ruserdata
 input*.tsv
 test*.R
+.DS_Store
