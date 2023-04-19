@@ -195,11 +195,13 @@ get_input_data <- function(param_file) {
         sgRNA1_Chr = dplyr::case_when(
           sgRNA1_Chr == "X" ~ "23",
           sgRNA1_Chr == "Y" ~ "24",
-          .default = as.character(sgRNA1_Chr)), 
+          # .default = as.character(sgRNA1_Chr)), 
+          TRUE ~ as.character(sgRNA1_Chr)), 
         sgRNA2_Chr = dplyr::case_when(
           sgRNA2_Chr == "X" ~ "23",
           sgRNA2_Chr == "Y" ~ "24",
-          .default = as.character(sgRNA2_Chr))
+          TRUE ~ as.character(sgRNA2_Chr))
+          #.default = as.character(sgRNA2_Chr))
         ) %>%
       dplyr::mutate(
         sgRNA1_Chr = as.numeric(sgRNA1_Chr), 
@@ -213,7 +215,8 @@ get_input_data <- function(param_file) {
       CHROM = dplyr::case_when(
       CHROM == "chrX" ~ "chr23",
       CHROM == "chrY" ~ "chr24",
-      .default = as.character(CHROM))
+      TRUE ~ as.character(CHROM))
+      # .default = as.character(CHROM))
     )
   
   if ("Sampleid" %in% colnames(CNA)) {
@@ -306,7 +309,8 @@ ccr.run_complete <- function(
       CHRM = dplyr::case_when(
         CHRM == "X" ~ "23",
         CHRM == "Y" ~ "24",
-        .default = as.character(CHRM))
+        TRUE ~ as.character(CHRM))
+#        .default = as.character(CHRM))
       ) %>%
     dplyr::mutate(CHRM = as.numeric(CHRM))
   
@@ -1326,7 +1330,7 @@ ccr2.solveLinearSys <- function(
   EXPname = ""
 ) {
   
-  ### 1. create matrix of interactions ###
+  # 1. create matrix of interactions 
   dual_FC <- dual_FC %>% 
     dplyr::mutate(sgRNA_ID_pair = paste0(sgRNA1_WGE_ID, "~", sgRNA2_WGE_ID)) 
 
@@ -1336,7 +1340,7 @@ ccr2.solveLinearSys <- function(
                                function(x) as.numeric(x %in% dual_FC$sgRNA_ID_pair))
   rownames(matrix_interactions) <- pseudo_single_p1_correctedFCs$sgRNA_ID
   colnames(matrix_interactions) <- pseudo_single_p2_correctedFCs$sgRNA_ID
-  # remove rows and columns with no index, correspond to pairs including "NONTARGET"
+  # remove rows and columns with no index
   id_rm_row <- rowSums(matrix_interactions) == 0
   id_rm_col <- colSums(matrix_interactions) == 0
   matrix_interactions <- matrix_interactions[!id_rm_row, ]
@@ -1344,57 +1348,67 @@ ccr2.solveLinearSys <- function(
   combinations <- combinations[!id_rm_row, ]
   combinations <- combinations[, !id_rm_col]
   
-  ### 2. create matrix of system: ### 
+  # 2. create matrix of system
   # n.eq=nrow(int)+ncol(int) times n.unknowns=nrow(int)*ncol(int)
-  tmp_G1_vect <- list()
+  sparse_mat_j <- c()
+  sparse_mat_i <- c()
+
   for (idx_row in 1:nrow(matrix_interactions)) {
     tmp <- matrix_interactions
     tmp[-idx_row, ] <- 0
-    tmp_G1_vect[[idx_row]] <- as.vector(t(tmp))
+    tmp_vec <- as.vector(t(tmp))
+    tmp_j <- which(tmp_vec != 0)
+    tmp_i <- rep(idx_row, length(tmp_j))
+    
+    sparse_mat_j <- c(sparse_mat_j, tmp_j)
+    sparse_mat_i <- c(sparse_mat_i, tmp_i)
   }
   
-  tmp_G2_vect <- list()
   for (idx_col in 1:ncol(matrix_interactions)) {
     tmp <- matrix_interactions
     tmp[, -idx_col] <- 0
-    tmp_G2_vect[[idx_col]] <- as.vector(t(tmp))
+    tmp_vec <- as.vector(t(tmp))
+    tmp_j <- which(tmp_vec != 0)
+    tmp_i <- rep(idx_col + nrow(matrix_interactions), length(tmp_j))
+    
+    sparse_mat_j <- c(sparse_mat_j, tmp_j)
+    sparse_mat_i <- c(sparse_mat_i, tmp_i)
   }
   
-  matrix_sys <- rbind(do.call(rbind, tmp_G1_vect), do.call(rbind, tmp_G2_vect))
-  rownames(matrix_sys) <- c(rownames(matrix_interactions), colnames(matrix_interactions))
-  colnames(matrix_sys) <- as.vector(t(combinations))
-  print(dim(matrix_sys))
+  nrow_sys <- as.integer(nrow(matrix_interactions) + ncol(matrix_interactions))
+  ncol_sys <- as.integer(nrow(matrix_interactions) * ncol(matrix_interactions))
+  matrix_sys <- sparseMatrix(
+    i=sparse_mat_i, 
+    j=sparse_mat_j,
+    x=1, 
+    dims=c(nrow_sys, ncol_sys), 
+    dimnames = list(c(rownames(matrix_interactions), colnames(matrix_interactions)), 
+                    as.vector(t(combinations)))) 
   
-  ### 3. create coefficient matrix ###
+  # matrix_sys include all possibile combinations, 
+  # remove those that are not present in dual_FC
+  matrix_sys <- matrix_sys[, colnames(matrix_sys) %in% dual_FC$sgRNA_ID_pair]
+  if(!all(dual_FC$sgRNA_ID_pair %in% colnames(matrix_sys))){
+    stop("all pairs in dual_FC must be included in the system matrix")
+  }
+  print(paste("dimension system matrix:", dim(matrix_sys)[1], dim(matrix_sys)[2]))
+  print(paste("n. entries not zero:", length(matrix_sys@i)))
+  
+  # 3. create coefficient vector
   correction_vect <- c(pseudo_single_p1_correctedFCs$correction_scaled[!id_rm_row], 
                        pseudo_single_p2_correctedFCs$correction_scaled[!id_rm_col])
   
-  # the matrix is very sparse,
-  # time_solve <- system.time(correction_pair <- MASS::ginv(matrix_sys) %*% correction_vect)
-  sparse_matrix_sys <- Matrix(matrix_sys, sparse = TRUE)
-  print(length(sparse_matrix_sys@i))
-  time_solve <- system.time(sparse_inv <- spginv(sparse_matrix_sys))
-  correction_pair <- sparse_inv %*% correction_vect
+  # 4. solve system 
+  time_solve <- system.time(correction_pair <- solve_system_fun(
+    matrix_sys = matrix_sys, 
+    b_coeff = correction_vect) # TODO: specify rank as input?
+    )
   print(sprintf("system solved after: %.2fs", time_solve[3]))
   
   # save output
   df_corr <- data.frame(sgRNA_ID_pair = colnames(matrix_sys), 
-                        correction = correction_pair) %>%
-    dplyr::filter(sgRNA_ID_pair %in% dual_FC$sgRNA_ID_pair)
-  # add back pairs including non target sgrna
-  tmp1 <-  pseudo_single_p1_correctedFCs %>% 
-    dplyr::filter(id_rm_row) %>% 
-    dplyr::select(sgRNA_ID, correction) %>%
-    dplyr::mutate(sgRNA_ID_pair = dual_FC$sgRNA_ID_pair[match(sgRNA_ID, dual_FC$sgRNA1_WGE_ID)]) %>%
-    dplyr::select(-sgRNA_ID)
-  
-  tmp2 <-  pseudo_single_p2_correctedFCs %>% 
-    dplyr::filter(id_rm_col) %>% 
-    dplyr::select(sgRNA_ID, correction) %>%
-    dplyr::mutate(sgRNA_ID_pair = dual_FC$sgRNA_ID_pair[match(sgRNA_ID, dual_FC$sgRNA2_WGE_ID)]) %>%
-    dplyr::select(-sgRNA_ID)
-  
-  df_corr <- rbind(df_corr, tmp1, tmp2)
+                        correction = correction_pair) 
+  # dplyr::filter(sgRNA_ID_pair %in% dual_FC$sgRNA_ID_pair)
   
   dual_FC_correctedFC <- dplyr::left_join(dual_FC, df_corr) %>%
     dplyr::mutate(correctedFC = avgFC + correction)
@@ -1404,7 +1418,7 @@ ccr2.solveLinearSys <- function(
                  pseudo_single_p2_correctedFCs$sgRNA_ID[!id_rm_col]), 
     gene = c(pseudo_single_p1_correctedFCs$genes[!id_rm_row], 
              pseudo_single_p2_correctedFCs$genes[!id_rm_col]),
-    pseudo_single_fitted = matrix_sys %*% correction_pair, 
+    pseudo_single_fitted = as.vector(matrix_sys %*% correction_pair), 
     pseudo_single = correction_vect, 
     guide_pos = c(rep(1, nrow(pseudo_single_p1_correctedFCs[!id_rm_row, ])), 
                   rep(2, nrow(pseudo_single_p2_correctedFCs[!id_rm_col, ]))))
@@ -2124,7 +2138,8 @@ ccr2.run <- function(
 ) {
   
   # exclude non-target pairs
-  id_nontarget <- grepl("NONTARGET", dual_FC$info_subtype)
+  # id_nontarget <- grepl("NONTARGET", dual_FC$info_subtype)
+  id_nontarget <- (is.na(dual_FC$sgRNA1_Chr) | is.na(dual_FC$sgRNA2_Chr))
   dual_FC <- dual_FC[!id_nontarget,]
   
   ### create pseudo single scores ###
@@ -2189,7 +2204,6 @@ ccr2.run <- function(
     display = display, 
     label = sprintf("guide1_%s", EXPname), 
     saveTO = outdir)
-  
   
   dataInjection_guide2_correctedFCs <- ccr.GWclean(
     dataInjection_guide2,
@@ -2273,9 +2287,9 @@ ccr2.run_nontarget <- function(
 ) {
   
   # process only gene_nontarget or nontarget_gene
-  id_nontarget <- grepl("NONTARGET", dual_FC$info_subtype) & 
-    dual_FC$info_subtype != "NONTARGET-NONTARGET"
-  
+  id_nontarget <- (is.na(dual_FC$sgRNA1_Chr) | is.na(dual_FC$sgRNA2_Chr)) & 
+    !(is.na(dual_FC$sgRNA1_Chr) & is.na(dual_FC$sgRNA2_Chr))
+    
   dual_FC_nt <- dual_FC[id_nontarget,]
   
   dual_pseudo_single_FC <- ccr2.createPseudoSingle_combine(
@@ -2663,18 +2677,35 @@ ccr2.run_complete <- function(
 
 #' Title
 #'
-#' @param x 
+#' @param matrix_sys 
+#' @param b_coeff 
+#' @param rank_svd 
 #'
 #' @return
 #'
-spginv <- function(x) {
-  Xsvd <- sparsesvd::sparsesvd(x)
+#' @examples
+solve_system_fun <- function(matrix_sys, b_coeff, rank_svd = 500){
+  
+  rank_svd <- min(nrow(matrix_sys), rank_svd) # what is the optimal choice? too high sometimes it brokes
+  Xsvd <- sparsesvd::sparsesvd(matrix_sys, rank = rank_svd)
+  
   Positive <- Xsvd$d > max(sqrt(.Machine$double.eps) * Xsvd$d[1L], 0)
-  if (all(Positive))
-    Xsvd$v %*% (1/Xsvd$d * t(Xsvd$u))
-  else if (!any(Positive))
-    array(0, dim(x)[2L:1L])
-  else Xsvd$v[, Positive, drop = FALSE] %*% ((1/Xsvd$d[Positive]) * t(Xsvd$u[, Positive, drop = FALSE]))
+  if (all(Positive)){
+    U <- Xsvd$u
+    V <- Xsvd$v
+    D <- Xsvd$d
+  }else{
+    if (!any(Positive)){
+        stop("SVD decomposition of system matrix failed")
+    }else{
+      U <- Xsvd$u[, Positive, drop = FALSE]
+      V <- Xsvd$v[, Positive, drop = FALSE]
+      D <- Xsvd$d[Positive]
+    }
+  }
+  
+  tmp <- 1/D * as.vector(t(U) %*% b_coeff) # faster than element-wise multiplication 
+  solution_sys <- V %*% tmp
+  
+  return(solution_sys)
 }
-
-
