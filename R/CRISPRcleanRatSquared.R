@@ -1,8 +1,6 @@
 #' @import ggplot2
 NULL
 
-# test git config
-
 #' Load matched files for dual KO
 #'
 #' get_input_data() load files as indicated in param_file. Must include count,
