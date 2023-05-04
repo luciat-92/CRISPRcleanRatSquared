@@ -8,6 +8,7 @@ ccr2.solveLinearSys(
   dual_FC,
   pseudo_single_p1_correctedFCs,
   pseudo_single_p2_correctedFCs,
+  split_graph = TRUE,
   display = TRUE,
   saveToFig = FALSE,
   saveFormat = "pdf",
@@ -21,6 +22,8 @@ ccr2.solveLinearSys(
 \item{pseudo_single_p1_correctedFCs}{}
 
 \item{pseudo_single_p2_correctedFCs}{}
+
+\item{split_graph}{}
 
 \item{display}{}
 

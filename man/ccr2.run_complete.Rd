@@ -19,7 +19,8 @@ ccr2.run_complete(
   correctGW,
   excludeGene_plot = NULL,
   CNA,
-  CN_thr = 8
+  CN_thr = 8,
+  ...
 )
 }
 \arguments{

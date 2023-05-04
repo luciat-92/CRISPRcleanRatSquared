@@ -4,7 +4,7 @@
 \alias{solve_system_fun}
 \title{Title}
 \usage{
-solve_system_fun(matrix_sys, b_coeff, rank_svd = 500)
+solve_system_fun(matrix_sys, b_coeff)
 }
 \arguments{
 \item{matrix_sys}{}

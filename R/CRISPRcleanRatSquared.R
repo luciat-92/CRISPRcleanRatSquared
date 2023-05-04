@@ -1314,6 +1314,7 @@ ccr2.filterGWclean <- function(
 #' @param EXPname 
 #' @param pseudo_single_p1_correctedFCs 
 #' @param pseudo_single_p2_correctedFCs 
+#' @param split_graph 
 #'
 #' @return
 #' @export
@@ -1323,6 +1324,7 @@ ccr2.solveLinearSys <- function(
   dual_FC, 
   pseudo_single_p1_correctedFCs, 
   pseudo_single_p2_correctedFCs, 
+  split_graph = TRUE,
   display = TRUE, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
@@ -1340,100 +1342,72 @@ ccr2.solveLinearSys <- function(
                                function(x) as.numeric(x %in% dual_FC$sgRNA_ID_pair))
   rownames(matrix_interactions) <- pseudo_single_p1_correctedFCs$sgRNA_ID
   colnames(matrix_interactions) <- pseudo_single_p2_correctedFCs$sgRNA_ID
-  # remove rows and columns with no index
-  id_rm_row <- rowSums(matrix_interactions) == 0
-  id_rm_col <- colSums(matrix_interactions) == 0
-  matrix_interactions <- matrix_interactions[!id_rm_row, ]
-  matrix_interactions <- matrix_interactions[,!id_rm_col]
-  combinations <- combinations[!id_rm_row, ]
-  combinations <- combinations[, !id_rm_col]
   
-  # 2. create matrix of system
-  # n.eq=nrow(int)+ncol(int) times n.unknowns=nrow(int)*ncol(int)
-  sparse_mat_j <- c()
-  sparse_mat_i <- c()
-
-  for (idx_row in 1:nrow(matrix_interactions)) {
-    tmp <- matrix_interactions
-    tmp[-idx_row, ] <- 0
-    tmp_vec <- as.vector(t(tmp))
-    tmp_j <- which(tmp_vec != 0)
-    tmp_i <- rep(idx_row, length(tmp_j))
+  if (split_graph) {
     
-    sparse_mat_j <- c(sparse_mat_j, tmp_j)
-    sparse_mat_i <- c(sparse_mat_i, tmp_i)
-  }
-  
-  for (idx_col in 1:ncol(matrix_interactions)) {
-    tmp <- matrix_interactions
-    tmp[, -idx_col] <- 0
-    tmp_vec <- as.vector(t(tmp))
-    tmp_j <- which(tmp_vec != 0)
-    tmp_i <- rep(idx_col + nrow(matrix_interactions), length(tmp_j))
+    print("Combinations split, largest connected components solved separately")
+    combinations_edges <- as.vector(combinations) 
+    combinations_edges <- combinations_edges[combinations_edges %in% dual_FC$sgRNA_ID_pair]
+    combinations_edges <- do.call(rbind, str_split(combinations_edges, pattern = "~"))
     
-    sparse_mat_j <- c(sparse_mat_j, tmp_j)
-    sparse_mat_i <- c(sparse_mat_i, tmp_i)
-  }
-  
-  nrow_sys <- as.integer(nrow(matrix_interactions) + ncol(matrix_interactions))
-  ncol_sys <- as.integer(nrow(matrix_interactions) * ncol(matrix_interactions))
-  matrix_sys <- sparseMatrix(
-    i=sparse_mat_i, 
-    j=sparse_mat_j,
-    x=1, 
-    dims=c(nrow_sys, ncol_sys), 
-    dimnames = list(c(rownames(matrix_interactions), colnames(matrix_interactions)), 
-                    as.vector(t(combinations)))) 
-  
-  # matrix_sys include all possibile combinations, 
-  # remove those that are not present in dual_FC
-  matrix_sys <- matrix_sys[, colnames(matrix_sys) %in% dual_FC$sgRNA_ID_pair]
-  if(!all(dual_FC$sgRNA_ID_pair %in% colnames(matrix_sys))){
-    stop("all pairs in dual_FC must be included in the system matrix")
-  }
-  print(paste("dimension system matrix:", dim(matrix_sys)[1], dim(matrix_sys)[2]))
-  print(paste("n. entries not zero:", length(matrix_sys@i)))
-  
-  # 3. create coefficient vector
-  correction_vect <- c(pseudo_single_p1_correctedFCs$correction_scaled[!id_rm_row], 
-                       pseudo_single_p2_correctedFCs$correction_scaled[!id_rm_col])
-  
-  # 4. solve system 
-  time_solve <- system.time(correction_pair <- solve_system_fun(
-    matrix_sys = matrix_sys, 
-    b_coeff = correction_vect) # TODO: specify rank as input?
+    g <- igraph::graph_from_edgelist(el = combinations_edges, 
+                                     directed = FALSE)
+    groups_g <-  igraph::clusters(g)
+    max_groups <- which.max(groups_g$csize)
+    
+    sub_nodes_small <- names(which(groups_g$membership != max_groups))
+    sub_nodes_large <- names(which(groups_g$membership == max_groups))
+    
+    print(paste("Largest connected component with sgRNA n =", length(sub_nodes_large)))
+    print(paste("Remaining sgRNA n =", length(sub_nodes_small)))
+    
+    # solve large system:
+    id_large_row <- rownames(matrix_interactions) %in% sub_nodes_large
+    id_large_col <- colnames(matrix_interactions) %in% sub_nodes_large
+    
+    res_large <- get_pairwise_correction(
+      matrix_interactions = matrix_interactions[id_large_row, id_large_col], 
+      combinations = combinations[id_large_row, id_large_col], 
+      dual_FC = dual_FC, 
+      pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_large_row, ], 
+      pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_large_col, ]
+      )
+    
+    # solve small system:
+    id_small_row <- rownames(matrix_interactions) %in% sub_nodes_small
+    id_small_col <- colnames(matrix_interactions) %in% sub_nodes_small
+    res_small <- get_pairwise_correction(
+      matrix_interactions = matrix_interactions[id_small_row, id_small_col], 
+      combinations = combinations[id_small_row, id_small_col], 
+      dual_FC = dual_FC, 
+      pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_small_row, ], 
+      pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_small_col, ]
     )
-  print(sprintf("system solved after: %.2fs", time_solve[3]))
+    
+    res_all <- list(df_corr = rbind(res_large$df_corr, res_small$df_corr), 
+                    pseudo_single_correction = rbind(
+                      res_large$pseudo_single_correction, 
+                      res_small$pseudo_single_correction)
+                    )
+    
+  }else{
+    
+    print("Linear system solved without split of combinations")
+    
+    res_all <- get_pairwise_correction(
+      matrix_interactions = matrix_interactions, 
+      combinations = combinations, 
+      dual_FC = dual_FC, 
+      pseudo_single_p1 = pseudo_single_p1_correctedFCs, 
+      pseudo_single_p2 = pseudo_single_p2_correctedFCs 
+    )
+    
+  }
   
-  # save output
-  df_corr <- data.frame(sgRNA_ID_pair = colnames(matrix_sys), 
-                        correction = correction_pair) 
-  # dplyr::filter(sgRNA_ID_pair %in% dual_FC$sgRNA_ID_pair)
-  
-  dual_FC_correctedFC <- dplyr::left_join(dual_FC, df_corr) %>%
+  df_corr <- res_all$df_corr
+  pseudo_single_correction <- res_all$pseudo_single_correction
+  dual_FC_correctedFC <- dplyr::left_join(dual_FC, df_corr, by = "sgRNA_ID_pair") %>%
     dplyr::mutate(correctedFC = avgFC + correction)
-  
-  pseudo_single_correction <- data.frame(
-    sgRNA_ID = c(pseudo_single_p1_correctedFCs$sgRNA_ID[!id_rm_row], 
-                 pseudo_single_p2_correctedFCs$sgRNA_ID[!id_rm_col]), 
-    gene = c(pseudo_single_p1_correctedFCs$genes[!id_rm_row], 
-             pseudo_single_p2_correctedFCs$genes[!id_rm_col]),
-    pseudo_single_fitted = as.vector(matrix_sys %*% correction_pair), 
-    pseudo_single = correction_vect, 
-    guide_pos = c(rep(1, nrow(pseudo_single_p1_correctedFCs[!id_rm_row, ])), 
-                  rep(2, nrow(pseudo_single_p2_correctedFCs[!id_rm_col, ]))))
-  
-  # plot
-  pseudo_single_correction$pseudo_single_fitted <- pseudo_single_correction$pseudo_single_fitted/c(pseudo_single_p1_correctedFCs$n[!id_rm_row],  
-                                                                                   pseudo_single_p2_correctedFCs$n[!id_rm_col])
-  pseudo_single_correction$pseudo_single <- pseudo_single_correction$pseudo_single/c(pseudo_single_p1_correctedFCs$n[!id_rm_row],  
-                                                                     pseudo_single_p2_correctedFCs$n[!id_rm_col])
-  pseudo_single_correction$guide_pos <- factor(pseudo_single_correction$guide_pos)
-  pseudo_single_correction$ID <- paste0(pseudo_single_correction$gene, "_", 
-                                        pseudo_single_correction$sgRNA_ID)
-  pseudo_single_correction$outliers <- ""
-  id_out <- abs(pseudo_single_correction$pseudo_single - pseudo_single_correction$pseudo_single_fitted) > 0.5
-  pseudo_single_correction$outliers[id_out] <- pseudo_single_correction$ID[id_out]
   
   if (saveToFig) {
     display <- TRUE
@@ -1445,9 +1419,9 @@ ccr2.solveLinearSys <- function(
   if (display) {
     
     pl_sys <- ggplot(pseudo_single_correction, aes(x = pseudo_single, 
-                                  y = pseudo_single_fitted, 
-                                  color = guide_pos, 
-                                  label = outliers)) + 
+                                                   y = pseudo_single_fitted, 
+                                                   color = guide_pos, 
+                                                   label = outliers)) + 
       geom_point(alpha = 0.7, size = 2) +
       geom_text_repel(size = 3, min.segment.length = 0, color = "black") + 
       geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") + 
@@ -1467,7 +1441,8 @@ ccr2.solveLinearSys <- function(
     print(pl_out)
     
     ### plot pseudo_single and pairwise correction ###
-    dual_FC_corr_plot <- dual_FC_correctedFC[!is.na(dual_FC_correctedFC$correction), ]
+    # dual_FC_corr_plot <- dual_FC_correctedFC[!is.na(dual_FC_correctedFC$correction), ]
+    dual_FC_corr_plot <- dual_FC_correctedFC
     dual_FC_corr_plot$correction_1 <- pseudo_single_correction$pseudo_single[match(dual_FC_corr_plot$sgRNA1_WGE_ID, pseudo_single_correction$sgRNA_ID)]
     dual_FC_corr_plot$correction_2 <- pseudo_single_correction$pseudo_single[match(dual_FC_corr_plot$sgRNA2_WGE_ID, pseudo_single_correction$sgRNA_ID)]
     
@@ -1491,9 +1466,9 @@ ccr2.solveLinearSys <- function(
   }
   
   return(list(
-    matrix_system = matrix_sys, 
     dual_FC = dual_FC_correctedFC, 
     pseudo_single = pseudo_single_correction))
+  
 }
 
 #' Title
@@ -1982,7 +1957,7 @@ ccr2.plot_correction <- function(df,
   # plot synergy before and after correction:
   pl <- ggplot(df, aes(x = bliss_zscore, 
                        y = bliss_zscore_corrected, 
-                       color = info_subtype)) + 
+                       color = info)) + 
     geom_abline(slope = 1, intercept = 0, 
                 linetype = "dashed", color = "black") + 
     geom_point(alpha = 0.5, size = 1) +
@@ -2134,7 +2109,8 @@ ccr2.run <- function(
   display = TRUE, 
   saveFormat = NULL, 
   outdir = "./", 
-  correctGW
+  correctGW, 
+  ...
 ) {
   
   # exclude non-target pairs
@@ -2244,7 +2220,8 @@ ccr2.run <- function(
     saveFormat = saveFormat,
     outdir = outdir, 
     EXPname = EXPname,
-    display = display)
+    display = display, 
+    ...)
   print("System solved, collpased correction converted to pairwise correction")
   
   pseudo_single_correction <- sys_solution$pseudo_single
@@ -2431,7 +2408,8 @@ ccr2.run_complete <- function(
   correctGW, 
   excludeGene_plot = NULL, 
   CNA, 
-  CN_thr = 8
+  CN_thr = 8, 
+  ...
 ) {
   
   #################################
@@ -2510,7 +2488,8 @@ ccr2.run_complete <- function(
     saveFormat = saveFormat,
     outdir = outdir, 
     EXPname = EXPname, 
-    correctGW = correctGW
+    correctGW = correctGW, 
+    ...
   )
   dual_FC_correctedFC <- tmp$dual_FC
   pseudo_single_correction <- tmp$pseudo_single
@@ -2677,6 +2656,112 @@ ccr2.run_complete <- function(
 
 #' Title
 #'
+#' @param matrix_interactions 
+#' @param combinations 
+#' @param dual_FC 
+#' @param pseudo_single_p1 
+#' @param pseudo_single_p2 
+#'
+#' @return
+#'
+#' @examples
+get_pairwise_correction <- function(matrix_interactions, 
+                                    combinations, 
+                                    dual_FC, 
+                                    pseudo_single_p1, 
+                                    pseudo_single_p2){
+  
+  # 2. create matrix of system
+  # n.eq=nrow(int)+ncol(int) times n.unknowns=nrow(int)*ncol(int)
+  sparse_mat_j <- c()
+  sparse_mat_i <- c()
+  
+  for (idx_row in 1:nrow(matrix_interactions)) {
+    tmp <- matrix_interactions
+    tmp[-idx_row, ] <- 0
+    tmp_vec <- as.vector(t(tmp))
+    tmp_j <- which(tmp_vec != 0)
+    tmp_i <- rep(idx_row, length(tmp_j))
+    sparse_mat_j <- c(sparse_mat_j, tmp_j)
+    sparse_mat_i <- c(sparse_mat_i, tmp_i)
+  }
+  
+  for (idx_col in 1:ncol(matrix_interactions)) {
+    tmp <- matrix_interactions
+    tmp[, -idx_col] <- 0
+    tmp_vec <- as.vector(t(tmp))
+    tmp_j <- which(tmp_vec != 0)
+    tmp_i <- rep(idx_col + nrow(matrix_interactions), length(tmp_j))
+    sparse_mat_j <- c(sparse_mat_j, tmp_j)
+    sparse_mat_i <- c(sparse_mat_i, tmp_i)
+  }
+  
+  nrow_sys <- as.integer(nrow(matrix_interactions) + ncol(matrix_interactions))
+  ncol_sys <- as.integer(nrow(matrix_interactions) * ncol(matrix_interactions))
+  matrix_sys <- sparseMatrix(
+    i = sparse_mat_i, 
+    j = sparse_mat_j,
+    x = 1, 
+    dims = c(nrow_sys, ncol_sys), 
+    dimnames = list(c(rownames(matrix_interactions), colnames(matrix_interactions)), 
+                    as.vector(t(combinations)))) 
+  
+  # matrix_sys include all possible combinations, 
+  # remove those that are not present in dual_FC
+  matrix_sys <- matrix_sys[, colnames(matrix_sys) %in% dual_FC$sgRNA_ID_pair]
+  print(paste("dimension system matrix:", dim(matrix_sys)[1], dim(matrix_sys)[2]))
+  print(paste("n. entries not zero:", length(matrix_sys@i)))
+  
+  # 3. create coefficient vector
+  correction_vect <- c(pseudo_single_p1$correction_scaled, 
+                       pseudo_single_p2$correction_scaled)
+  
+  # 4. solve system 
+  time_solve <- system.time(correction_pair <- solve_system_fun(
+    matrix_sys = matrix_sys, 
+    b_coeff = correction_vect)
+  )
+  print(sprintf("system solved after: %.2fs", time_solve[3]))
+  
+  # save output
+  df_corr <- data.frame(sgRNA_ID_pair = colnames(matrix_sys), 
+                        correction = correction_pair) 
+  
+  pseudo_single_correction <- data.frame(
+    sgRNA_ID = c(pseudo_single_p1$sgRNA_ID, 
+                 pseudo_single_p2$sgRNA_ID), 
+    gene = c(pseudo_single_p1$genes, 
+             pseudo_single_p2$genes),
+    pseudo_single_fitted = as.vector(matrix_sys %*% correction_pair), 
+    pseudo_single = correction_vect, 
+    guide_pos = c(rep(1, nrow(pseudo_single_p1)), 
+                  rep(2, nrow(pseudo_single_p2)))
+  )
+  
+  # for plot
+  pseudo_single_correction$pseudo_single_fitted <- pseudo_single_correction$pseudo_single_fitted/c(pseudo_single_p1$n,  
+                                                                                                   pseudo_single_p2$n)
+  pseudo_single_correction$pseudo_single <- pseudo_single_correction$pseudo_single/c(pseudo_single_p1$n,  
+                                                                                     pseudo_single_p2$n)
+  pseudo_single_correction$guide_pos <- factor(pseudo_single_correction$guide_pos)
+  pseudo_single_correction$ID <- paste0(pseudo_single_correction$gene, "_", 
+                                        pseudo_single_correction$sgRNA_ID)
+  pseudo_single_correction$outliers <- ""
+  id_out <- abs(pseudo_single_correction$pseudo_single - pseudo_single_correction$pseudo_single_fitted) > 0.5
+  pseudo_single_correction$outliers[id_out] <- pseudo_single_correction$ID[id_out]
+  
+  return(
+    list(
+      df_corr = df_corr, 
+      pseudo_single_correction = pseudo_single_correction
+    )
+  )
+  
+}
+
+
+#' Title
+#'
 #' @param matrix_sys 
 #' @param b_coeff 
 #' @param rank_svd 
@@ -2684,18 +2769,18 @@ ccr2.run_complete <- function(
 #' @return
 #'
 #' @examples
-solve_system_fun <- function(matrix_sys, b_coeff, rank_svd = 500){
+solve_system_fun <- function(matrix_sys, b_coeff){
   
-  rank_svd <- min(nrow(matrix_sys), rank_svd) # what is the optimal choice? too high sometimes it brokes
-  Xsvd <- sparsesvd::sparsesvd(matrix_sys, rank = rank_svd)
+  # rank_mat <- Matrix::rankMatrix(matrix_sys, method = "qr.R") # if necessary
+  Xsvd <- sparsesvd::sparsesvd(matrix_sys)
   
   Positive <- Xsvd$d > max(sqrt(.Machine$double.eps) * Xsvd$d[1L], 0)
-  if (all(Positive)){
+  if (all(Positive)) {
     U <- Xsvd$u
     V <- Xsvd$v
     D <- Xsvd$d
   }else{
-    if (!any(Positive)){
+    if (!any(Positive)) {
         stop("SVD decomposition of system matrix failed")
     }else{
       U <- Xsvd$u[, Positive, drop = FALSE]
