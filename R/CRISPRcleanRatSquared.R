@@ -1975,6 +1975,18 @@ ccr2.plot_correction <- function(df,
   
 }
 
+#' Title
+#'
+#' @param dual_FC 
+#' @param saveToFig 
+#' @param saveFormat 
+#' @param outdir 
+#' @param EXPname 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 ccr2.plot_bliss_fit <- function(dual_FC, 
                                 saveToFig = FALSE, 
                                 saveFormat = "pdf",
@@ -2352,19 +2364,22 @@ ccr2.run_nontarget <- function(
     dplyr::mutate(sgRNA_ID_pair = paste0(sgRNA1_WGE_ID, "~", sgRNA2_WGE_ID))
   
   tmp1 <- pseudo_single_p1_correctedFCs %>% 
-    dplyr::select(sgRNA_ID, correction) %>%
-    dplyr::mutate(sgRNA_ID_pair = dual_FC_nt$sgRNA_ID_pair[match(sgRNA_ID, dual_FC_nt$sgRNA1_WGE_ID)]) %>%
-    dplyr::select(-sgRNA_ID)
+    dplyr::rename(sgRNA1_WGE_ID = sgRNA_ID) %>%
+    dplyr::select(sgRNA1_WGE_ID, correction) 
+  tmp1 <- dplyr::inner_join(dual_FC_nt, tmp1, by = "sgRNA1_WGE_ID")
   
   tmp2 <- pseudo_single_p2_correctedFCs %>% 
-    dplyr::select(sgRNA_ID, correction) %>%
-    dplyr::mutate(sgRNA_ID_pair = dual_FC_nt$sgRNA_ID_pair[match(sgRNA_ID, dual_FC_nt$sgRNA2_WGE_ID)]) %>%
-    dplyr::select(-sgRNA_ID)
+    dplyr::rename(sgRNA2_WGE_ID = sgRNA_ID) %>%
+    dplyr::select(sgRNA2_WGE_ID, correction) 
+  tmp2 <- dplyr::inner_join(dual_FC_nt, tmp2, by = "sgRNA2_WGE_ID")
   
-  df_corr <- rbind(tmp1, tmp2)
-  dual_FC_correctedFC <- dplyr::left_join(dual_FC_nt, df_corr) %>%
+  dual_FC_correctedFC <- rbind(tmp1, tmp2) %>%
     dplyr::mutate(correctedFC = avgFC + correction)
   
+  if (!all(dual_FC_nt$ID %in% dual_FC_correctedFC$ID)) {
+    stop("In NONTARGET correction some guides are not corrected")
+  }
+ 
   return(dual_FC_correctedFC)
   
 }
@@ -2520,11 +2535,11 @@ ccr2.run_complete <- function(
                        saveFormat = saveFormat,
                        outdir = outdir)
   # plot bliss fit
-  ccr2.plot_bliss_fit(dual_FC = dual_FC_correctedFC, 
-                      EXPname = EXPname, 
-                      saveToFig = saveToFig, 
-                      saveFormat = saveFormat,
-                      outdir = outdir)
+  #ccr2.plot_bliss_fit(dual_FC = dual_FC_correctedFC, 
+  #                    EXPname = EXPname, 
+  #                    saveToFig = saveToFig, 
+  #                    saveFormat = saveFormat,
+  #                    outdir = outdir)
   
   # divide by class
   ccr2.plotClasses(
