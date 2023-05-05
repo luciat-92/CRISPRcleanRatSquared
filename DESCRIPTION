@@ -16,5 +16,5 @@ Depends: CRISPRcleanR,
   ggrepel, 
   Matrix
 Imports: readr, 
-  sparsesvd
+  RSpectra
 Suggests: lintr

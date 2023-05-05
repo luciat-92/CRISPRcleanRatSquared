@@ -1358,10 +1358,8 @@ ccr2.solveLinearSys <- function(
     sub_nodes_small <- names(which(groups_g$membership != max_groups))
     sub_nodes_large <- names(which(groups_g$membership == max_groups))
     
-    print(paste("Largest connected component with sgRNA n =", length(sub_nodes_large)))
-    print(paste("Remaining sgRNA n =", length(sub_nodes_small)))
-    
     # solve large system:
+    print(paste("Largest connected component with sgRNA n =", length(sub_nodes_large)))
     id_large_row <- rownames(matrix_interactions) %in% sub_nodes_large
     id_large_col <- colnames(matrix_interactions) %in% sub_nodes_large
     
@@ -1374,6 +1372,7 @@ ccr2.solveLinearSys <- function(
       )
     
     # solve small system:
+    print(paste("Remaining sgRNA n =", length(sub_nodes_small)))
     id_small_row <- rownames(matrix_interactions) %in% sub_nodes_small
     id_small_col <- colnames(matrix_interactions) %in% sub_nodes_small
     res_small <- get_pairwise_correction(
@@ -2771,8 +2770,9 @@ get_pairwise_correction <- function(matrix_interactions,
 #' @examples
 solve_system_fun <- function(matrix_sys, b_coeff){
   
-  # rank_mat <- Matrix::rankMatrix(matrix_sys, method = "qr.R") # if necessary
-  Xsvd <- sparsesvd::sparsesvd(matrix_sys)
+  rank_mat <- Matrix::rankMatrix(matrix_sys, method = "qr.R") # if necessary
+  Xsvd <- RSpectra::svds(A = matrix_sys, k = rank_mat[1])
+  # Xsvd <- sparsesvd::sparsesvd(matrix_sys)
   
   Positive <- Xsvd$d > max(sqrt(.Machine$double.eps) * Xsvd$d[1L], 0)
   if (all(Positive)) {
