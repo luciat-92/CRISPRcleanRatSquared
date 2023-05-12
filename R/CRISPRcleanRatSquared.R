@@ -35,20 +35,37 @@ get_input_data <- function(param_file) {
   n_files <- length(count_files)
   dual_library_list <- list()
   dual_count_list <- lapply(count_files, function(x)
-    suppressWarnings(readr::read_table(sprintf('%s%s', input_fold, get(x)), 
-                                show_col_types = FALSE)))
+    readr::read_table(sprintf('%s%s', input_fold, get(x)), 
+                      col_types = readr::cols(.default = "?",
+                                              sgRNA1_ID = "c", 
+                                              sgRNA2_ID = "c"), 
+                                show_col_types = FALSE))
   
   for (idx_file in seq_len(n_files)) {
     
     # load library and specify col types:
-    names_col_lib <- names(readxl::read_xlsx(
-      path = sprintf('%s%s', input_fold, get(library_files[idx_file])), 
-      n_max = 0))
-    col_types_lib <- ifelse(grepl("Chr", names_col_lib) | grepl("WGE_ID", names_col_lib), 
-                            "text", "guess")
-    dual_library_list[[idx_file]] <- readxl::read_xlsx(
-      path = sprintf('%s%s', input_fold, get(library_files[idx_file])),
-      col_types = col_types_lib)
+    if (grepl(".xls", library_files[idx_file])) {
+      names_col_lib <- names(rea::read_xlsx(
+        path = sprintf('%s%s', input_fold, get(library_files[idx_file])),
+        n_max = 0))
+
+      col_types_lib <- ifelse(grepl("Chr", names_col_lib) | grepl("WGE_ID", names_col_lib),
+                              "text", "guess")
+
+      dual_library_list[[idx_file]] <- readxl::read_xlsx(
+        path = sprintf('%s%s', input_fold, get(library_files[idx_file])),
+        col_types = col_types_lib)
+    }else{
+      
+      dual_library_list[[idx_file]] <- readr::read_tsv(
+        sprintf('%s%s', input_fold, get(library_files[idx_file])),
+        col_types = readr::cols(.default = "?", 
+                                sgRNA1_Chr = "c", 
+                                sgRNA2_Chr = "c", 
+                                sgRNA1_WGE_ID = "c", 
+                                sgRNA2_WGE_ID = "c"), 
+        show_col_types = FALSE)
+      }
     
     print(sprintf("############ load file n. %i ############", idx_file))
     
