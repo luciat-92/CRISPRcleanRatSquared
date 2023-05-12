@@ -3,7 +3,7 @@ Title: Unsupervised Correction of Gene Independent Cell Responses in dual
   CRISPR-Cas9 screenings
 Version: 0.3.0
 Authors@R: 
-  person("Lucia", "Trastulla", , "lucia.trastulla@fht.org", role = "aut", 
+  person("Lucia", "Trastulla", email = "lucia.trastulla@fht.org", role = c("aut", "cre"), 
     comment = c(ORCID = "0000-0001-8749-475X"))
 Description: Unsupervised approach to correct gene independent responses to 
   CRISPRcas9 targeting in dual combinatorial screenings. This package is based 
@@ -13,6 +13,7 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.2
 Depends: CRISPRcleanR, 
+  ggplot2,
   ggrepel, 
   Matrix
 Imports: readr, 
