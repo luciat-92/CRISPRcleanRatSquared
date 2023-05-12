@@ -14,7 +14,8 @@ ccr2.run(
   display = TRUE,
   saveFormat = NULL,
   outdir = "./",
-  correctGW
+  correctGW,
+  ...
 )
 }
 \arguments{
