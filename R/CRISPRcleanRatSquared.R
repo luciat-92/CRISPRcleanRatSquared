@@ -18,33 +18,65 @@ NULL
 
 #' Load matched files for dual KO
 #'
-#' get_input_data() load files as indicated in param_file. Must include count,
-#' library and copy_number fields.
+#' get_input_data() load files as indicated in param_file or param_list. 
+#' Must include count1_file, library1_file and copy_number_file. 
+#' Multiple count and library files can be passed (increasing index order). 
+#' Additional used inputs are input_fold and out_fold (default = "./") and CL_name (default = "./")
 #'
 #' @param param_file .tsv file, the first column indicates the type of data, the
 #'   second the file location. Can include multiple files that contain the name
-#'   count or library BUT the lenght must coincide.
+#'   count or library BUT the length must coincide.
+#' @param param_list 
 #'
-#' @return a list * CNA: copy number, one row per gene * count:  dual KO count,
-#'   one row per guides combination * library: metadata for dual KO library *
-#'   CL_name: cell line name * out_fold: location to store results
+#' @return a list 
+#' - CNA: copy number, one row per gene 
+#' - count:  dual KO count, one row per guides combination 
+#' - library: metadata for dual KO library
+#' - CL_name: cell line name
+#' - out_fold: location to store results
 #' @export
 #' 
-get_input_data <- function(param_file) {
+get_input_data <- function(
+  param_file = NULL,
+  param_list = NULL
+  ) {
   
-  input_info <- suppressWarnings(readr::read_table(
-    param_file, 
-    col_names = FALSE, 
-    show_col_types = FALSE))
-  
-  for (i in 1:nrow(input_info)) {
-    assign(input_info$X1[i], input_info$X2[i])    
+  if (is.null(param_file) & is.null(param_list)) {
+    stop("one among param_file and param_list must be not NULL")
   }
   
-  count_files <- input_info$X1[grepl("count", input_info$X1)]
-  library_files <- input_info$X1[grepl("library", input_info$X1)]
+  if (!is.null(param_file)) {
+    input_info <- suppressWarnings(readr::read_table(
+      param_file, 
+      col_names = FALSE, 
+      show_col_types = FALSE))
+    
+    for (i in 1:nrow(input_info)) {
+      assign(input_info$X1[i], input_info$X2[i])    
+    }
+    count_files <- input_info$X1[grepl("count", input_info$X1)]
+    library_files <- input_info$X1[grepl("library", input_info$X1)]
+  }else{
+    input_info <- param_list
+    for (i in 1:length(input_info)) {
+      assign(names(input_info)[i], input_info[[i]])    
+    }
+    count_files <- names(input_info)[grepl("count", names(input_info))]
+    library_files <- names(input_info)[grepl("library", names(input_info))]
+  }
+  
   if (length(count_files) != length(library_files)) {
     stop("library and count files MUST match")
+  }
+  
+  # check the correct input files were passed
+  if (!exists("input_fold", inherits = F)) {input_fold <- "./"}
+  if (!exists("out_fold", inherits = F)) {out_fold <- "./"}
+  if (!exists("CL_name", inherits = F)) {CL_name <- ""}
+  if (!exists("copy_number_file", inherits = F) | 
+      !exists("count1_file", inherits = F) |
+      !exists("library1_file", inherits = F)) {
+    stop("Input MUST include copy_number_file, count1_file and library1_file entries")
   }
   
   n_files <- length(count_files)

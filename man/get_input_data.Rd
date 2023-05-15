@@ -4,19 +4,28 @@
 \alias{get_input_data}
 \title{Load matched files for dual KO}
 \usage{
-get_input_data(param_file)
+get_input_data(param_file = NULL, param_list = NULL)
 }
 \arguments{
 \item{param_file}{.tsv file, the first column indicates the type of data, the
 second the file location. Can include multiple files that contain the name
-count or library BUT the lenght must coincide.}
+count or library BUT the length must coincide.}
+
+\item{param_list}{}
 }
 \value{
-a list * CNA: copy number, one row per gene * count:  dual KO count,
-one row per guides combination * library: metadata for dual KO library *
-CL_name: cell line name * out_fold: location to store results
+a list
+\itemize{
+\item CNA: copy number, one row per gene
+\item count:  dual KO count, one row per guides combination
+\item library: metadata for dual KO library
+\item CL_name: cell line name
+\item out_fold: location to store results
+}
 }
 \description{
-get_input_data() load files as indicated in param_file. Must include count,
-library and copy_number fields.
+get_input_data() load files as indicated in param_file or param_list.
+Must include count1_file, library1_file and copy_number_file.
+Multiple count and library files can be passed (increasing index order).
+Additional used inputs are input_fold and out_fold (default = "./") and CL_name (default = "./")
 }
