@@ -11,6 +11,9 @@ ccr2.logFCs2chromPos(dual_FC, dual_library)
 
 \item{dual_library}{}
 }
+\value{
+
+}
 \description{
 Title
 }

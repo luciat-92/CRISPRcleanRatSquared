@@ -23,6 +23,9 @@ ccr2.plotClasses(
 
 \item{EXPname}{}
 }
+\value{
+
+}
 \description{
 plot: distribution before and after based on classes
 }

@@ -32,6 +32,9 @@ ccr2.plotCNA(
 
 \item{var_to_plot}{}
 }
+\value{
+
+}
 \description{
 plot: distribution with respect to CN
 }

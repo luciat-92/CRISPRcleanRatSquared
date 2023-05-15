@@ -8,14 +8,23 @@ Authors@R:
 Description: Unsupervised approach to correct gene independent responses to 
   CRISPRcas9 targeting in dual combinatorial screenings. This package is based 
   on CRISPRCleanR for single gene knock-out.
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a license
+License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.2
-Depends: CRISPRcleanR, 
+RoxygenNote: 7.1.2
+Depends: R (>= 4.1.0),
+  Matrix,
+  CRISPRcleanR, 
   ggplot2,
   ggrepel, 
-  Matrix
-Imports: readr, 
-  RSpectra
+  stringr
+Imports: magrittr,
+  dplyr,
+  readr,
+  readxl,
+  RSpectra,
+  GenomicRanges, 
+  ggpubr, 
+  igraph, 
+  tibble
 Suggests: lintr

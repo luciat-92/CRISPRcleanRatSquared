@@ -11,6 +11,9 @@ ccr2.get_summary_singletons(dual_FC, corrected = F)
 
 \item{corrected}{}
 }
+\value{
+
+}
 \description{
 Title
 }

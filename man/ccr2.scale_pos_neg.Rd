@@ -11,6 +11,9 @@ ccr2.scale_pos_neg(dual_FC, corrected = FALSE)
 
 \item{corrected}{}
 }
+\value{
+
+}
 \description{
 Title
 }

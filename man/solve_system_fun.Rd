@@ -10,8 +10,9 @@ solve_system_fun(matrix_sys, b_coeff)
 \item{matrix_sys}{}
 
 \item{b_coeff}{}
+}
+\value{
 
-\item{rank_svd}{}
 }
 \description{
 Title

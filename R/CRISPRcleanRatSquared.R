@@ -1,4 +1,19 @@
 #' @import ggplot2
+#' @import ggrepel
+#' @import Matrix
+#' @import CRISPRcleanR
+#' @import RSpectra
+#' @import magrittr
+#' @import dplyr
+#' @import readr
+#' @import tibble
+#' @import stringr
+#' @importFrom readxl read_xlsx
+#' @importFrom GenomicRanges findOverlaps 
+#' @importFrom GenomicRanges makeGRangesFromDataFrame
+#' @importFrom ggpubr ggarrange
+#' @importFrom igraph clusters
+#' @importFrom igraph graph_from_edgelist
 NULL
 
 #' Load matched files for dual KO
@@ -45,7 +60,7 @@ get_input_data <- function(param_file) {
     
     # load library and specify col types:
     if (grepl(".xls", library_files[idx_file])) {
-      names_col_lib <- names(rea::read_xlsx(
+      names_col_lib <- names(readxl::read_xlsx(
         path = sprintf('%s%s', input_fold, get(library_files[idx_file])),
         n_max = 0))
 
@@ -1582,13 +1597,13 @@ ccr2.add_CNA <- function(
     start.field = "start",
     end.field = "end")
 
-  pos1_genom_range <- makeGRangesFromDataFrame(
+  pos1_genom_range <- GenomicRanges::makeGRangesFromDataFrame(
     dual_FC[, c("sgRNA1_Chr", "sgRNA1_Start", "sgRNA1_End")],
     seqnames.field = "sgRNA1_Chr",
     start.field = "sgRNA1_Start",
     end.field = "sgRNA1_End")
   
-  pos2_genom_range <- makeGRangesFromDataFrame(
+  pos2_genom_range <- GenomicRanges::makeGRangesFromDataFrame(
     dual_FC[, c("sgRNA2_Chr", "sgRNA2_Start", "sgRNA2_End")],
     seqnames.field = "sgRNA2_Chr",
     start.field = "sgRNA2_Start",
@@ -1886,7 +1901,7 @@ ccr2.plotMatchingSingle <- function(
     start.field = "start",
     end.field = "end")
   
-  single_genom_range <- makeGRangesFromDataFrame(
+  single_genom_range <- GenomicRanges::makeGRangesFromDataFrame(
     single_correctedFCs_filt[, c("CHR", "startp", "endp")],
     seqnames.field = "CHR",
     start.field = "startp",
@@ -2113,24 +2128,26 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC, corrected = FALSE,
 
 #' Title
 #'
-#' @param EXPname 
-#' @param display 
-#' @param outdir 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param libraryAnnotation_dual 
-#' @param dual_FC
+#' @param dual_FC 
 #' @param single_correctedFCs 
+#' @param libraryAnnotation_dual 
 #' @param match_dual_single_seq 
+#' @param EXPname 
+#' @param saveToFig 
+#' @param display 
+#' @param saveFormat 
+#' @param outdir 
+#' @param correctGW 
+#' @param ... 
 #'
 #' @return
 #' @export
 #'
 #' @examples
 ccr2.run <- function(
+  dual_FC,
   single_correctedFCs, 
   libraryAnnotation_dual, 
-  dual_FC,
   match_dual_single_seq, 
   EXPname = "",
   saveToFig = FALSE, 
@@ -2262,26 +2279,28 @@ ccr2.run <- function(
 }
 
 
+
 #' Title
 #'
-#' @param EXPname 
-#' @param display 
-#' @param outdir 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param libraryAnnotation_dual 
-#' @param dual_FC
+#' @param dual_FC 
 #' @param single_correctedFCs 
+#' @param libraryAnnotation_dual 
 #' @param match_dual_single_seq 
+#' @param EXPname 
+#' @param saveToFig 
+#' @param display 
+#' @param saveFormat 
+#' @param outdir 
+#' @param correctGW 
 #'
 #' @return
 #' @export
 #'
 #' @examples
 ccr2.run_nontarget <- function(
+  dual_FC,
   single_correctedFCs, 
   libraryAnnotation_dual, 
-  dual_FC,
   match_dual_single_seq, 
   EXPname = "",
   saveToFig = FALSE, 
@@ -2419,6 +2438,7 @@ ccr2.run_nontarget <- function(
 #' @param excludeGene_plot 
 #' @param CNA 
 #' @param CN_thr 
+#' @param ... 
 #'
 #' @return
 #' @export
@@ -2795,7 +2815,6 @@ get_pairwise_correction <- function(matrix_interactions,
 #'
 #' @param matrix_sys 
 #' @param b_coeff 
-#' @param rank_svd 
 #'
 #' @return
 #'

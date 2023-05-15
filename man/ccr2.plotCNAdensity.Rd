@@ -35,6 +35,9 @@ ccr2.plotCNAdensity(
 
 \item{var_to_plot}{}
 }
+\value{
+
+}
 \description{
 plot: density divided per max CNA threshold
 }

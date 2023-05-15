@@ -32,6 +32,9 @@ ccr2.createPseudoSingle_combine(
 
 \item{outdir}{}
 }
+\value{
+
+}
 \description{
 Title
 }

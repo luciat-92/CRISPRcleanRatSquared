@@ -11,6 +11,9 @@ ccr2.compute_bliss(dual_FC, corrected = FALSE)
 
 \item{corrected}{}
 }
+\value{
+
+}
 \description{
 Title
 }

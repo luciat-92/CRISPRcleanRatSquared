@@ -11,6 +11,9 @@ match_dual_to_single(dual_seq, single_library_seq)
 
 \item{single_library_seq}{}
 }
+\value{
+
+}
 \description{
 Title
 }

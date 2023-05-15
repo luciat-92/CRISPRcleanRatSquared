@@ -32,6 +32,9 @@ ccr2.filterGWclean(
 
 \item{EXPname}{}
 }
+\value{
+
+}
 \description{
 adjust ccr output applied to pseudo single and filter per considered guide in dual
 }

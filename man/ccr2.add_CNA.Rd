@@ -11,6 +11,9 @@ ccr2.add_CNA(CNA, dual_FC)
 
 \item{dual_FC}{}
 }
+\value{
+
+}
 \description{
 combine copy number info with dual FC data.frame
 }

@@ -35,6 +35,9 @@ ccr2.solveLinearSys(
 
 \item{EXPname}{}
 }
+\value{
+
+}
 \description{
 Title
 }

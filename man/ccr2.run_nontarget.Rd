@@ -5,9 +5,9 @@
 \title{Title}
 \usage{
 ccr2.run_nontarget(
+  dual_FC,
   single_correctedFCs,
   libraryAnnotation_dual,
-  dual_FC,
   match_dual_single_seq,
   EXPname = "",
   saveToFig = FALSE,
@@ -18,6 +18,8 @@ ccr2.run_nontarget(
 )
 }
 \arguments{
+\item{dual_FC}{}
+
 \item{single_correctedFCs}{}
 
 \item{libraryAnnotation_dual}{}
@@ -33,6 +35,11 @@ ccr2.run_nontarget(
 \item{saveFormat}{}
 
 \item{outdir}{}
+
+\item{correctGW}{}
+}
+\value{
+
 }
 \description{
 Title

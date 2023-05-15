@@ -32,6 +32,9 @@ ccr2.plotMatchingSingle(
 
 \item{EXPname}{}
 }
+\value{
+
+}
 \description{
 plot: before and after correction of matching single dual gene
 }

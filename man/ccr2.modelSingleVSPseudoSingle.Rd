@@ -32,6 +32,9 @@ ccr2.modelSingleVSPseudoSingle(
 
 \item{EXPname}{}
 }
+\value{
+
+}
 \description{
 Model to convert combined dual to single screens
 that depends on the specific gene selection

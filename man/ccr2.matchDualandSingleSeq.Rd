@@ -11,6 +11,9 @@ ccr2.matchDualandSingleSeq(dual_library, single_library)
 
 \item{single_library}{}
 }
+\value{
+
+}
 \description{
 Title
 }

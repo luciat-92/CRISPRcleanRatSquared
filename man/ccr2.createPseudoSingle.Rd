@@ -15,6 +15,9 @@ ccr2.createPseudoSingle(dual_FC, single_FC, match_dual_single_seq, guide_id)
 
 \item{guide_id}{}
 }
+\value{
+
+}
 \description{
 psuedo single avgFC via mean for each gene in guide1 or guide2 across all the other genes
 store also number of genes from which mean is computed
