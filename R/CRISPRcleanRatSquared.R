@@ -286,7 +286,7 @@ get_input_data <- function(
   if ("Sampleid" %in% colnames(CNA)) {
     CL_name_unif <- toupper(str_replace_all(CL_name, "[-|_]", ""))
     CNA <- CNA %>% 
-      dplyr::filter(toupper(str_replace_all(Sampleid, "[-|_]", "")) %in% CL_name)
+      dplyr::filter(toupper(str_replace_all(Sampleid, "[-|_]", "")) %in% CL_name_unif)
     if (nrow(CNA) == 0) {
       stop(sprintf("no CN info available for %s", CL_name))
     }
