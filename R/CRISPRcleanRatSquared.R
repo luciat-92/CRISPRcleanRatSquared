@@ -1056,6 +1056,7 @@ ccr2.createPseudoSingle_combine <- function(
 #' @param outdir 
 #' @param EXPname 
 #' @param pseudo_single_FC 
+#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -1064,9 +1065,10 @@ ccr2.createPseudoSingle_combine <- function(
 ccr2.modelSingleVSPseudoSingle <- function(
   pseudo_single_FC, 
   guide_id, 
-  correctGW = NULL, 
-  display=TRUE, 
-  saveToFig=FALSE, 
+  correctGW = NULL,
+  weighted_reg = TRUE,
+  display = TRUE, 
+  saveToFig = FALSE, 
   saveFormat = "pdf",
   outdir = "./", 
   EXPname = ""
@@ -1074,6 +1076,9 @@ ccr2.modelSingleVSPseudoSingle <- function(
   
   # remove NA in single screens
   matched_df <- pseudo_single_FC[!is.na(pseudo_single_FC$ID_single), ]
+  if (!weighted_reg) {
+    matched_df$n <- rep(1, nrow(matched_df))
+  }
   # fmla <- as.formula("avgFC ~ avgFC_single*correction_single")
   fmla <- "avgFC ~ 0 + avgFC_single"
 
