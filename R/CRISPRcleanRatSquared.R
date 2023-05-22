@@ -1056,6 +1056,7 @@ ccr2.createPseudoSingle_combine <- function(
 #' @param outdir 
 #' @param EXPname 
 #' @param pseudo_single_FC 
+#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -1064,9 +1065,10 @@ ccr2.createPseudoSingle_combine <- function(
 ccr2.modelSingleVSPseudoSingle <- function(
   pseudo_single_FC, 
   guide_id, 
-  correctGW = NULL, 
-  display=TRUE, 
-  saveToFig=FALSE, 
+  correctGW = NULL,
+  weighted_reg = TRUE,
+  display = TRUE, 
+  saveToFig = FALSE, 
   saveFormat = "pdf",
   outdir = "./", 
   EXPname = ""
@@ -1074,6 +1076,9 @@ ccr2.modelSingleVSPseudoSingle <- function(
   
   # remove NA in single screens
   matched_df <- pseudo_single_FC[!is.na(pseudo_single_FC$ID_single), ]
+  if (!weighted_reg) {
+    matched_df$n <- rep(1, nrow(matched_df))
+  }
   # fmla <- as.formula("avgFC ~ avgFC_single*correction_single")
   fmla <- "avgFC ~ 0 + avgFC_single"
 
@@ -2175,6 +2180,7 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC, corrected = FALSE,
 #' @param outdir 
 #' @param correctGW 
 #' @param ... 
+#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2190,6 +2196,7 @@ ccr2.run <- function(
   display = TRUE, 
   saveFormat = NULL, 
   outdir = "./", 
+  weighted_reg = TRUE,
   correctGW, 
   ...
 ) {
@@ -2223,7 +2230,8 @@ ccr2.run <- function(
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
-    EXPname = EXPname)
+    EXPname = EXPname, 
+    weighted_reg = weighted_reg)
   
   model_guide2 <- ccr2.modelSingleVSPseudoSingle(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
@@ -2233,7 +2241,8 @@ ccr2.run <- function(
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
-    EXPname = EXPname)
+    EXPname = EXPname, 
+    weighted_reg = weighted_reg)
   
   ### inject data ###
   dataInjection_guide1 <- ccr2.injectData(
@@ -2328,6 +2337,7 @@ ccr2.run <- function(
 #' @param saveFormat 
 #' @param outdir 
 #' @param correctGW 
+#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2343,6 +2353,7 @@ ccr2.run_nontarget <- function(
   display = TRUE, 
   saveFormat = NULL, 
   outdir = "./", 
+  weighted_reg = TRUE,
   correctGW
 ) {
   
@@ -2369,7 +2380,8 @@ ccr2.run_nontarget <- function(
     display = display,  
     saveFormat = saveFormat,
     outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
-    EXPname = EXPname)
+    EXPname = EXPname, 
+    weighted_reg = weighted_reg)
   
   model_guide2 <- ccr2.modelSingleVSPseudoSingle(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
@@ -2378,7 +2390,8 @@ ccr2.run_nontarget <- function(
     display = display,  
     saveFormat = saveFormat,
     outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
-    EXPname = EXPname)
+    EXPname = EXPname, 
+    weighted_reg = weighted_reg)
   
   ### inject data ###
   dataInjection_guide1 <- ccr2.injectData(
@@ -2475,6 +2488,7 @@ ccr2.run_nontarget <- function(
 #' @param CNA 
 #' @param CN_thr 
 #' @param ... 
+#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2496,6 +2510,7 @@ ccr2.run_complete <- function(
   excludeGene_plot = NULL, 
   CNA, 
   CN_thr = 8, 
+  weighted_reg = TRUE,
   ...
 ) {
   
@@ -2560,7 +2575,8 @@ ccr2.run_complete <- function(
     saveFormat = saveFormat,
     outdir = outdir, 
     EXPname = EXPname, 
-    correctGW = correctGW
+    correctGW = correctGW, 
+    weighted_reg = weighted_reg
   )
   
   ##########################################
@@ -2576,6 +2592,7 @@ ccr2.run_complete <- function(
     outdir = outdir, 
     EXPname = EXPname, 
     correctGW = correctGW, 
+    weighted_reg = weighted_reg,
     ...
   )
   dual_FC_correctedFC <- tmp$dual_FC
