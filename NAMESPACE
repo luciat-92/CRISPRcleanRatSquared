@@ -2,6 +2,7 @@
 
 export(ccr.run_complete)
 export(ccr2.NormfoldChanges)
+export(ccr2.add_CNA)
 export(ccr2.compute_bliss)
 export(ccr2.createPseudoSingle)
 export(ccr2.createPseudoSingle_combine)

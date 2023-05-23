@@ -1614,9 +1614,10 @@ ccr2.plotClasses <- function(
 #' combine copy number info with dual FC data.frame
 #'
 #' @param CNA 
-#' @param dual_FC 
+#' @param dual_FC
 #'
 #' @return
+#' @export
 #'
 ccr2.add_CNA <- function(
   CNA, 
