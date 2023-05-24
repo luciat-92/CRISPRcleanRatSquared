@@ -9,5 +9,6 @@ All guides (apart from non-target VS non-target) are corrected
 - decouple correction solving linear system via Rspectra svds (option to split system based on unconnected components) and get pairwise correction
 - create 2 separate models for gene vs nontarget and correct without solving the linear system
 
-Update v0.3.1: Cell line name matching removing \_,- in copy number file
+Update v0.3.1: Cell line name matching removing \_,\- in copy number file
+
 Update v0.3.2: Fix CN > 9 set to 8, CN rounded
