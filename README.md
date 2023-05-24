@@ -1,6 +1,6 @@
 # CRISPRcleanR^2
 
-v0.3.1: Correct combinatorial screens:
+v0.3.2: Correct combinatorial screens:
 All guides (apart from non-target VS non-target) are corrected
 - collpase to 1 dimension (position 1 and 2)
 - match with single screenings of the same cell line and create a model to map
