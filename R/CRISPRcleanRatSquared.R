@@ -1666,8 +1666,8 @@ ccr2.add_CNA <- function(
   
   dual_FC_withCNA <- dual_FC_withCNA %>% 
     dplyr::mutate(
-      Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
-      Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
+      Gene1_CN = round(Gene1_CN),
+      Gene2_CN = round(Gene2_CN),
       Prod_CN = Gene1_CN * Gene2_CN, 
       Sum_CN = Gene1_CN + Gene2_CN) %>%
     dplyr::filter(!is.na(Prod_CN))
@@ -1761,7 +1761,7 @@ ccr2.plotCNA <- function(
                                fill = type)) + 
     geom_boxplot(outlier.size = 1) + 
     # geom_jitter(position = position_jitter(width = 0.05), size = 0.5) +
-    geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
+    geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.5) +
     theme_bw() + 
     #stat_summary(fun = mean, geom = "line", aes(group = type), color = "red")  + 
     #stat_summary(fun = mean, geom = "point", aes(group = type), color = "red") +
@@ -1776,12 +1776,16 @@ ccr2.plotCNA <- function(
     ggtitle(title_plot)
   
   df_plot$Gene2_CN <- sprintf("CN guide2: %s", df_plot$Gene2_CN)
+  df_plot$Gene2_CN <- factor(
+    df_plot$Gene2_CN, 
+    levels = sprintf("CN guide2: %s", sort(as.numeric(levels(dual_FC_withCNA$Max_CN)))))
+  
   pl_CN_comb <- ggplot(df_plot, aes(x = Gene1_CN, y = logFC, fill = type)) + 
     geom_boxplot() + 
     #geom_jitter(position = position_jitter(width = 0.05), size = 0.5)+
     theme_bw() + 
     facet_wrap(.~Gene2_CN) +
-    geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
+    geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.5) +
     theme(axis.text = element_text(size = 12),
           strip.text = element_text(size = 12),
           axis.title = element_text(size = 13),
@@ -1957,9 +1961,7 @@ ccr2.plotMatchingSingle <- function(
     dplyr::mutate(Gene_CN = NA) 
   FC_withCNA$Gene_CN[queryHits(overlap)] <- CNA$C[subjectHits(overlap)]
   FC_withCNA <- FC_withCNA %>%
-    dplyr::mutate(Gene_CN = dplyr::case_when(
-      Gene_CN > 9 ~ 8, TRUE ~ round(Gene_CN)
-      ))
+    dplyr::mutate(Gene_CN = round(Gene_CN))
   
   df_plot <- data.frame(
     logFC = c(FC_withCNA$avgFC, FC_withCNA$correctedFC), 
@@ -2658,7 +2660,7 @@ ccr2.run_complete <- function(
     outdir = outdir, 
     var_to_plot = "bliss_zscore")
   
-  # density distribution for CN > 8 for any guide1 or guide2
+  # density distribution for high CN for any guide1 or guide2
   ccr2.plotCNAdensity(
     dual_FC_correctedFC = dual_FC_correctedFC, 
     CNA = CNA, 
