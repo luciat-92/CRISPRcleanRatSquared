@@ -1666,8 +1666,8 @@ ccr2.add_CNA <- function(
   
   dual_FC_withCNA <- dual_FC_withCNA %>% 
     dplyr::mutate(
-      Gene1_CN = dplyr::case_when(Gene1_CN > 9 ~ 8, TRUE ~ round(Gene1_CN)), 
-      Gene2_CN = dplyr::case_when(Gene2_CN > 9 ~ 8, TRUE ~ round(Gene2_CN)), 
+      Gene1_CN = round(Gene1_CN),
+      Gene2_CN = round(Gene2_CN),
       Prod_CN = Gene1_CN * Gene2_CN, 
       Sum_CN = Gene1_CN + Gene2_CN) %>%
     dplyr::filter(!is.na(Prod_CN))
@@ -1957,9 +1957,7 @@ ccr2.plotMatchingSingle <- function(
     dplyr::mutate(Gene_CN = NA) 
   FC_withCNA$Gene_CN[queryHits(overlap)] <- CNA$C[subjectHits(overlap)]
   FC_withCNA <- FC_withCNA %>%
-    dplyr::mutate(Gene_CN = dplyr::case_when(
-      Gene_CN > 9 ~ 8, TRUE ~ round(Gene_CN)
-      ))
+    dplyr::mutate(Gene_CN = round(Gene_CN))
   
   df_plot <- data.frame(
     logFC = c(FC_withCNA$avgFC, FC_withCNA$correctedFC), 
@@ -2658,7 +2656,7 @@ ccr2.run_complete <- function(
     outdir = outdir, 
     var_to_plot = "bliss_zscore")
   
-  # density distribution for CN > 8 for any guide1 or guide2
+  # density distribution for high CN for any guide1 or guide2
   ccr2.plotCNAdensity(
     dual_FC_correctedFC = dual_FC_correctedFC, 
     CNA = CNA, 
