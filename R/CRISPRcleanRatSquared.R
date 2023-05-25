@@ -2167,7 +2167,8 @@ ccr2.plot_bliss_fit <- function(dual_FC,
 #' @export
 #'
 #' @examples
-ccr2.plot_bliss_vs_FC <- function(dual_FC, corrected = FALSE, 
+ccr2.plot_bliss_vs_FC <- function(dual_FC, 
+                                  corrected = FALSE, 
                                   THR_FC = -1,
                                   THR_BLISS = -1, 
                                   saveToFig = FALSE, 
@@ -2836,6 +2837,29 @@ ccr2.run_complete <- function(
   dual_FC_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_correctedFC, 
                                             corrected = TRUE)
   
+  # get gene level
+  dual_FC_gene_correctedFC <- dual_FC_correctedFC %>%
+    dplyr::group_by(Gene_Pair) %>%
+    dplyr::summarise(
+      n_guides = dplyr::n(),
+      ID = paste0(ID, collapse = ","), 
+      info_subtype = paste0(unique(info_subtype), collapse = ","), 
+      info = paste0(unique(info), collapse = ","), 
+      Gene1 = unique(Gene1), 
+      Gene1_Chr = paste0(unique(sgRNA1_Chr), collapse = ","), 
+      Gene1_BP = mean(sgRNA1_BP), 
+      Gene2 = unique(Gene2), 
+      Gene2_BP = mean(sgRNA2_BP), 
+      Gene2_Chr = paste0(unique(sgRNA2_Chr), collapse = ","), 
+      correction = median(correction),
+      avgFC = median(avgFC),
+      avgFC_scaled = median(avgFC_scaled), 
+      bliss_zscore = median(bliss_zscore), 
+      correctedFC = median(correctedFC),
+      correctedFC_scaled = median(correctedFC_scaled), 
+      bliss_zscore_corrected = median(bliss_zscore_corrected)) %>%
+    ungroup()
+  
   # plot bliss vs avgFC
   top_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
                                          corrected = TRUE, 
@@ -2844,6 +2868,13 @@ ccr2.run_complete <- function(
                                          saveFormat = saveFormat,
                                          outdir = outdir)
   
+  top_gene_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC, 
+                                             corrected = TRUE, 
+                                             EXPname = EXPname, 
+                                             saveToFig = saveToFig, 
+                                             saveFormat = saveFormat,
+                                             outdir = sprintf("%sGENELEVEL_", outdir))
+  
   top_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
                                            corrected = FALSE, 
                                            EXPname = EXPname, 
@@ -2851,13 +2882,23 @@ ccr2.run_complete <- function(
                                            saveFormat = saveFormat,
                                            outdir = outdir)
   
+  top_gene_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC, 
+                                              corrected = FALSE, 
+                                              EXPname = EXPname, 
+                                              saveToFig = saveToFig, 
+                                              saveFormat = saveFormat,
+                                              outdir = sprintf("%sGENELEVEL_", outdir))
+  
   return(list(dual = dual_FC_correctedFC, 
+              dual_gene = dual_FC_gene_correctedFC,
               single = single_correctedFCs_filt,
               pseudo_single_segments = pseudo_single_segments,
+              system_solition = pseudo_single_correction,
               model_perf = model_perf,
               top_corrected = top_corrected, 
+              top_gene_corrected = top_gene_corrected, 
               top_uncorrected = top_uncorrected, 
-              system_solition = pseudo_single_correction))
+              top_gene_uncorrected = top_gene_uncorrected))
   
 }
 
