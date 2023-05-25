@@ -6,6 +6,7 @@
 \usage{
 ccr2.filterGWclean(
   dataInjection_correctedFCs,
+  dataInjection_segments,
   pseudo_single,
   guide_id,
   saveToFig = FALSE,
@@ -17,6 +18,8 @@ ccr2.filterGWclean(
 }
 \arguments{
 \item{dataInjection_correctedFCs}{}
+
+\item{dataInjection_segments}{}
 
 \item{pseudo_single}{}
 
@@ -36,5 +39,6 @@ ccr2.filterGWclean(
 
 }
 \description{
-adjust ccr output applied to pseudo single and filter per considered guide in dual
+adjust ccr output applied to pseudo single and filter per considered guide in dual,
+get segments only for guides in the dual screen
 }

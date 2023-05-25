@@ -1306,7 +1306,8 @@ ccr2.injectData <- function(
 
 #' Title
 #'
-#' adjust ccr output applied to pseudo single and filter per considered guide in dual
+#' adjust ccr output applied to pseudo single and filter per considered guide in dual, 
+#' get segments only for guides in the dual screen
 #'
 #' @param dataInjection_correctedFCs 
 #' @param guide_id 
@@ -1316,6 +1317,7 @@ ccr2.injectData <- function(
 #' @param outdir 
 #' @param EXPname 
 #' @param pseudo_single 
+#' @param dataInjection_segments 
 #'
 #' @return
 #' @export
@@ -1323,6 +1325,7 @@ ccr2.injectData <- function(
 #' @examples
 ccr2.filterGWclean <- function(
   dataInjection_correctedFCs, 
+  dataInjection_segments,
   pseudo_single, 
   guide_id, 
   saveToFig = FALSE, 
@@ -1331,6 +1334,7 @@ ccr2.filterGWclean <- function(
   outdir = "./", 
   EXPname = ""
 ) {
+  
   
   pseudo_single_correctedFCs <- dataInjection_correctedFCs %>% 
     dplyr::mutate(correction = correctedFC - avgFC) %>% 
@@ -1345,15 +1349,50 @@ ccr2.filterGWclean <- function(
     by = "sgRNA_ID") %>%
     dplyr::mutate(correction_scaled = n*correction)
   
+  # get segments
+  tmp <- dataInjection_correctedFCs %>% 
+    dplyr::mutate(GW_guideIdx = 1:length(guideIdx)) %>%
+    dplyr::filter(!is.na(sgRNA_ID_dual)) %>%
+    dplyr::mutate(correction = correctedFC - avgFC)
+  
+  gw_pseudo_single_segments <- dataInjection_segments %>%
+    dplyr::mutate(
+      seg_id = sprintf("chr%i_%i_%i", CHR, startp, endp), 
+      guide_start = as.numeric(str_trim(str_split_i(string = guideIdx, pattern = "[,]", i = 1))), 
+      guide_end = as.numeric(str_trim(str_split_i(string = guideIdx, pattern = "[,]", i = 2)))
+    )
+  
+  tmp$segment_id <- sapply(tmp$GW_guideIdx,
+                           function(x) 
+                             gw_pseudo_single_segments$seg_id[x <= gw_pseudo_single_segments$guide_end & 
+                                                                x >= gw_pseudo_single_segments$guide_start])
+  
+  pseudo_single_segments <- tmp %>% 
+    dplyr::group_by(segment_id) %>%
+    dplyr::summarise(
+      CHR = unique(CHR), 
+      startp = min(startp), 
+      endp = max(endp),
+      correction = mean(correction), # small fluctuation, unique does not work
+      n_guides = length(sgRNA_ID_dual), 
+      all_guides = paste0(sgRNA_ID_dual, collapse = ","), 
+      n_genes = length(unique(genes)),
+      all_genes = paste0(unique(genes), collapse = ",")) %>%
+    arrange(CHR, startp) %>%
+    ungroup()
+  
+  
   if (saveToFig) {
     display <- TRUE
-    file_name <- sprintf("%s%s_correction_singleVSpseudosingle_guide%i.%s", 
+    file1_name <- sprintf("%s%s_correction_singleVSpseudosingle_guide%i.%s", 
                          outdir, EXPname, guide_id, saveFormat)
+    file2_name <- sprintf("%s%s_hist_genes_per_segment_guide%i.%s", 
+                          outdir, EXPname, guide_id, saveFormat)
   }
   
   if (display) {
     
-    pl <- ggplot(complete_out, 
+    pl1 <- ggplot(complete_out, 
                  aes(x = correction_single, y = correction)) + 
       geom_point(alpha = 0.7, size = 1.5) +
       geom_vline(xintercept = 0, linetype = "dashed", color = "red") + 
@@ -1363,15 +1402,27 @@ ccr2.filterGWclean <- function(
       ggtitle(sprintf("Guide position %i", guide_id)) +
       xlab("Single correction") + 
       ylab("Pseudo single correction")
-    print(pl)
+    print(pl1)
+    
+    pl2 <- ggplot(pseudo_single_segments, 
+                 aes(x = n_genes)) + 
+      geom_bar(width = 0.5) +
+      theme_bw() + 
+      theme(legend.position = "right") + 
+      ggtitle(sprintf("Guide position %i", guide_id)) +
+      xlab("N. of genes in a segment") + 
+      ylab("N. of segments")
+    print(pl2)
     
   }
   
   if (saveToFig) {
-    ggsave(filename = file_name, plot = pl, width = 4.5, height = 4.5)
+    ggsave(filename = file1_name, plot = pl1, width = 4.5, height = 4.5)
+    ggsave(filename = file2_name, plot = pl2, width = 3, height = 4.5)
   }
   
-  return(complete_out)
+  return(list(pseudo_single_FC = complete_out, 
+              pseudo_single_seg = pseudo_single_segments))
   
 }
 
@@ -2284,6 +2335,7 @@ ccr2.run <- function(
   # consider only guides in dual screen
   pseudo_single_p1_correctedFCs <- ccr2.filterGWclean(
     dataInjection_correctedFCs = dataInjection_guide1_correctedFCs$corrected_logFCs,
+    dataInjection_segments = dataInjection_guide1_correctedFCs$segments,
     pseudo_single = dual_pseudo_single_FC$sgRNA1,
     guide_id = 1, 
     saveToFig = saveToFig, 
@@ -2294,6 +2346,7 @@ ccr2.run <- function(
   
   pseudo_single_p2_correctedFCs <- ccr2.filterGWclean(
     dataInjection_correctedFCs = dataInjection_guide2_correctedFCs$corrected_logFCs,
+    dataInjection_segments = dataInjection_guide2_correctedFCs$segments,
     pseudo_single = dual_pseudo_single_FC$sgRNA2,
     guide_id = 2, 
     saveToFig = saveToFig, 
@@ -2302,14 +2355,21 @@ ccr2.run <- function(
     EXPname = EXPname,
     display = display)
   
+  # save identified segments
+  tmp1 <- pseudo_single_p1_correctedFCs$pseudo_single_seg %>%
+    dplyr::mutate(guide_pos = "1")
+  tmp2 <- pseudo_single_p2_correctedFCs$pseudo_single_seg %>%
+    dplyr::mutate(guide_pos = "2")
+  pseudo_single_segments <- rbind(tmp1, tmp2)
+  
   print("CRISPRcleanR applied to GW pseudo singles (position 1 and 2)")
   
   ##################################################
   ### solve linear system to get pair correction ###
   sys_solution <- ccr2.solveLinearSys(
     dual_FC = dual_FC, 
-    pseudo_single_p1_correctedFCs = pseudo_single_p1_correctedFCs, 
-    pseudo_single_p2_correctedFCs = pseudo_single_p2_correctedFCs, 
+    pseudo_single_p1_correctedFCs = pseudo_single_p1_correctedFCs$pseudo_single_FC, 
+    pseudo_single_p2_correctedFCs = pseudo_single_p2_correctedFCs$pseudo_single_FC, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
@@ -2323,8 +2383,9 @@ ccr2.run <- function(
   
   return(
     list(model_perf = models_performance,
-        pseudo_single = pseudo_single_correction, 
-        dual_FC = dual_FC_correctedFC)
+         pseudo_single_segments = pseudo_single_segments,
+         pseudo_single = pseudo_single_correction, 
+         dual_FC = dual_FC_correctedFC)
     )
 }
 
@@ -2439,6 +2500,7 @@ ccr2.run_nontarget <- function(
   # consider only guides in dual screen
   pseudo_single_p1_correctedFCs <- ccr2.filterGWclean(
     dataInjection_correctedFCs = dataInjection_guide1_correctedFCs$corrected_logFCs,
+    dataInjection_segments = dataInjection_guide1_correctedFCs$segments,
     pseudo_single = dual_pseudo_single_FC$sgRNA1,
     guide_id = 1, 
     saveToFig = saveToFig, 
@@ -2449,6 +2511,7 @@ ccr2.run_nontarget <- function(
   
   pseudo_single_p2_correctedFCs <- ccr2.filterGWclean(
     dataInjection_correctedFCs = dataInjection_guide2_correctedFCs$corrected_logFCs,
+    dataInjection_segments = dataInjection_guide2_correctedFCs$segments,
     pseudo_single = dual_pseudo_single_FC$sgRNA2,
     guide_id = 2, 
     saveToFig = saveToFig, 
@@ -2457,16 +2520,16 @@ ccr2.run_nontarget <- function(
     outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
     EXPname = EXPname)
   
-  # assign results
+  # assign results (logFC)
   dual_FC_nt <- dual_FC_nt %>% 
     dplyr::mutate(sgRNA_ID_pair = paste0(sgRNA1_WGE_ID, "~", sgRNA2_WGE_ID))
   
-  tmp1 <- pseudo_single_p1_correctedFCs %>% 
+  tmp1 <- pseudo_single_p1_correctedFCs$pseudo_single_FC %>% 
     dplyr::rename(sgRNA1_WGE_ID = sgRNA_ID) %>%
     dplyr::select(sgRNA1_WGE_ID, correction) 
   tmp1 <- dplyr::inner_join(dual_FC_nt, tmp1, by = "sgRNA1_WGE_ID")
   
-  tmp2 <- pseudo_single_p2_correctedFCs %>% 
+  tmp2 <- pseudo_single_p2_correctedFCs$pseudo_single_FC %>% 
     dplyr::rename(sgRNA2_WGE_ID = sgRNA_ID) %>%
     dplyr::select(sgRNA2_WGE_ID, correction) 
   tmp2 <- dplyr::inner_join(dual_FC_nt, tmp2, by = "sgRNA2_WGE_ID")
@@ -2474,11 +2537,21 @@ ccr2.run_nontarget <- function(
   dual_FC_correctedFC <- rbind(tmp1, tmp2) %>%
     dplyr::mutate(correctedFC = avgFC + correction)
   
+  # assign results (segments)
+  tmp1 <- pseudo_single_p1_correctedFCs$pseudo_single_seg %>%
+    dplyr::mutate(guide_pos = "1")
+  
+  tmp2 <- pseudo_single_p2_correctedFCs$pseudo_single_seg %>%
+    dplyr::mutate(guide_pos = "2")
+  
+  pseudo_single_segments <- rbind(tmp1, tmp2)
+  
   if (!all(dual_FC_nt$ID %in% dual_FC_correctedFC$ID)) {
     stop("In NONTARGET correction some guides are not corrected")
   }
  
   return(list(model_perf = models_performance,
+              pseudo_single_segments = pseudo_single_segments,
               dual_FC = dual_FC_correctedFC))
   
 }
@@ -2593,7 +2666,10 @@ ccr2.run_complete <- function(
     weighted_reg = weighted_reg
   )
   dual_FC_nt_correctedFC <- tmp$dual_FC
-  model_perf_nt <-  tmp$model_perf %>% mutate(type = "NONTARGET_PAIR")
+  model_perf_nt <-  tmp$model_perf %>% 
+    mutate(type = "NONTARGET_PAIR")
+  pseudo_single_segments_nt <- tmp$pseudo_single_segments %>% 
+    mutate(type = "NONTARGET_PAIR")
   
   ##########################################
   ### get correction for pairs targeting ###
@@ -2618,6 +2694,10 @@ ccr2.run_complete <- function(
   model_perf <-  tmp$model_perf %>% 
     mutate(type = "DOUBLE_CUT_PAIR") %>% 
     bind_rows(model_perf_nt)
+  
+  pseudo_single_segments <- tmp$pseudo_single_segments %>% 
+    mutate(type = "DOUBLE_CUT_PAIR") %>% 
+    bind_rows(pseudo_single_segments_nt)
   
   # combine all res 
   dual_FC_correctedFC <- rbind(dual_FC_correctedFC, dual_FC_nt_correctedFC)
@@ -2773,6 +2853,7 @@ ccr2.run_complete <- function(
   
   return(list(dual = dual_FC_correctedFC, 
               single = single_correctedFCs_filt,
+              pseudo_single_segments = pseudo_single_segments,
               model_perf = model_perf,
               top_corrected = top_corrected, 
               top_uncorrected = top_uncorrected, 
