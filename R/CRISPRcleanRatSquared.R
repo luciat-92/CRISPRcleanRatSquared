@@ -1079,9 +1079,7 @@ ccr2.modelSingleVSPseudoSingle <- function(
   if (!weighted_reg) {
     matched_df$n <- rep(1, nrow(matched_df))
   }
-  # fmla <- as.formula("avgFC ~ avgFC_single*correction_single")
   fmla <- "avgFC ~ 0 + avgFC_single"
-
   fit_model <- glm(formula = as.formula(fmla), 
                    data = matched_df,
                    weights = matched_df$n, 
@@ -2242,6 +2240,14 @@ ccr2.run <- function(
     EXPname = EXPname, 
     weighted_reg = weighted_reg)
   
+  models_performance <- data.frame(
+    position = c("guide1", "guide2"), 
+    n = c(nrow(model_guide1$model$model), nrow(model_guide2$model$model)), 
+    cor = c(cor(model_guide1$model$model$avgFC_single, model_guide1$model$model$avgFC), 
+            cor(model_guide2$model$model$avgFC_single, model_guide2$model$model$avgFC)), 
+    R2 = c(with(model_guide1$model_summary, 1 - deviance/null.deviance),
+           with(model_guide2$model_summary, 1 - deviance/null.deviance)))
+  
   ### inject data ###
   dataInjection_guide1 <- ccr2.injectData(
     model_single_to_pseudo = model_guide1$model, 
@@ -2316,7 +2322,8 @@ ccr2.run <- function(
   dual_FC_correctedFC <- sys_solution$dual_FC
   
   return(
-    list(pseudo_single = pseudo_single_correction, 
+    list(model_perf = models_performance,
+        pseudo_single = pseudo_single_correction, 
         dual_FC = dual_FC_correctedFC)
     )
 }
@@ -2391,6 +2398,14 @@ ccr2.run_nontarget <- function(
     EXPname = EXPname, 
     weighted_reg = weighted_reg)
   
+  models_performance <- data.frame(
+    position = c("guide1", "guide2"), 
+    n = c(nrow(model_guide1$model$model), nrow(model_guide2$model$model)), 
+    cor = c(cor(model_guide1$model$model$avgFC_single, model_guide1$model$model$avgFC), 
+            cor(model_guide2$model$model$avgFC_single, model_guide2$model$model$avgFC)), 
+    R2 = c(with(model_guide1$model_summary, 1 - deviance/null.deviance),
+           with(model_guide2$model_summary, 1 - deviance/null.deviance)))
+  
   ### inject data ###
   dataInjection_guide1 <- ccr2.injectData(
     model_single_to_pseudo = model_guide1$model, 
@@ -2463,7 +2478,8 @@ ccr2.run_nontarget <- function(
     stop("In NONTARGET correction some guides are not corrected")
   }
  
-  return(dual_FC_correctedFC)
+  return(list(model_perf = models_performance,
+              dual_FC = dual_FC_correctedFC))
   
 }
 
@@ -2563,7 +2579,7 @@ ccr2.run_complete <- function(
   
   #############################################################################
   ### get correction for pairs with NONTARGET, use pseudo single correction ###
-  dual_FC_nt_correctedFC <- ccr2.run_nontarget(
+  tmp <- ccr2.run_nontarget(
     dual_FC = dual_FC, 
     match_dual_single_seq = library_matched_seq, 
     single_correctedFCs = single_correctedFCs, 
@@ -2576,6 +2592,8 @@ ccr2.run_complete <- function(
     correctGW = correctGW, 
     weighted_reg = weighted_reg
   )
+  dual_FC_nt_correctedFC <- tmp$dual_FC
+  model_perf_nt <-  tmp$model_perf %>% mutate(type = "NONTARGET_PAIR")
   
   ##########################################
   ### get correction for pairs targeting ###
@@ -2593,8 +2611,13 @@ ccr2.run_complete <- function(
     weighted_reg = weighted_reg,
     ...
   )
+  
   dual_FC_correctedFC <- tmp$dual_FC
   pseudo_single_correction <- tmp$pseudo_single
+  
+  model_perf <-  tmp$model_perf %>% 
+    mutate(type = "DOUBLE_CUT_PAIR") %>% 
+    bind_rows(model_perf_nt)
   
   # combine all res 
   dual_FC_correctedFC <- rbind(dual_FC_correctedFC, dual_FC_nt_correctedFC)
@@ -2750,6 +2773,7 @@ ccr2.run_complete <- function(
   
   return(list(dual = dual_FC_correctedFC, 
               single = single_correctedFCs_filt,
+              model_perf = model_perf,
               top_corrected = top_corrected, 
               top_uncorrected = top_uncorrected, 
               system_solition = pseudo_single_correction))
