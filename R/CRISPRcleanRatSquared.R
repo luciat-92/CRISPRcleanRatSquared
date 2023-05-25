@@ -1759,13 +1759,9 @@ ccr2.plotCNA <- function(
   
   pl_CN <- ggplot(df_plot, aes(x = Max_CN, y = logFC, 
                                fill = type)) + 
-    geom_boxplot(outlier.size = 1) + 
-    # geom_jitter(position = position_jitter(width = 0.05), size = 0.5) +
+    geom_boxplot(outlier.size = 0.5) + 
     geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.5) +
     theme_bw() + 
-    #stat_summary(fun = mean, geom = "line", aes(group = type), color = "red")  + 
-    #stat_summary(fun = mean, geom = "point", aes(group = type), color = "red") +
-    # geom_hline(yintercept = 0, color = "red", linetype = "dashed", size = 0.8) +
     theme(axis.text = element_text(size = 12),
           legend.title = element_blank(),
           legend.position = "bottom", 
@@ -1778,11 +1774,10 @@ ccr2.plotCNA <- function(
   df_plot$Gene2_CN <- sprintf("CN guide2: %s", df_plot$Gene2_CN)
   df_plot$Gene2_CN <- factor(
     df_plot$Gene2_CN, 
-    levels = sprintf("CN guide2: %s", sort(as.numeric(levels(dual_FC_withCNA$Max_CN)))))
+    levels = sprintf("CN guide2: %s", sort(as.numeric(levels(dual_FC_withCNA$Gene2_CN)))))
   
   pl_CN_comb <- ggplot(df_plot, aes(x = Gene1_CN, y = logFC, fill = type)) + 
-    geom_boxplot() + 
-    #geom_jitter(position = position_jitter(width = 0.05), size = 0.5)+
+    geom_boxplot(outlier.size = 0.5) + 
     theme_bw() + 
     facet_wrap(.~Gene2_CN) +
     geom_hline(yintercept = 0, color = "red", linetype = "dashed", linewidth = 0.5) +
