@@ -1,6 +1,6 @@
 # CRISPRcleanR^2
 
-v0.3.2: Correct combinatorial screens:
+v0.3.3: Correct combinatorial screens:
 All guides (apart from non-target VS non-target) are corrected
 - collpase to 1 dimension (position 1 and 2)
 - match with single screenings of the same cell line and create a model to map
@@ -12,3 +12,5 @@ All guides (apart from non-target VS non-target) are corrected
 Update v0.3.1: Cell line name matching removing \_,\- in copy number file
 
 Update v0.3.2: Fix CN > 9 set to 8, CN rounded
+
+Update v0.3.3: remove median logFC from GW single screen
