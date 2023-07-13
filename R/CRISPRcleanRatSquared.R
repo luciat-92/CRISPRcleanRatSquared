@@ -341,7 +341,12 @@ ccr.run_complete <- function(
   
   gwSortedFCs <- gwSortedFCs %>%
     dplyr::mutate(SEQ = libraryAnnotation_single$seq[match(rownames(gwSortedFCs),
-                                                           rownames(libraryAnnotation_single))])
+                                                           rownames(libraryAnnotation_single))]) %>%
+    dplyr::rename(avgFC_notcentered = avgFC) %>%
+    dplyr::mutate(avgFC = avgFC_notcentered - median(avgFC_notcentered)) %>%
+    dplyr::relocate(avgFC, .after = genes) %>%
+    dplyr::relocate(avgFC_notcentered, .after = last_col())
+  
   # get CRISPRCleanR single correction
   single_correctedFCs <- ccr.GWclean(gwSortedFCs,
                                      display = display,
@@ -349,6 +354,7 @@ ccr.run_complete <- function(
   
   single_correctedFCs$corrected_logFCs <- single_correctedFCs$corrected_logFCs %>% 
     dplyr::mutate(correction = correctedFC - avgFC)
+
   
   # save segments
   single_ccr_segments <- single_correctedFCs$segments
@@ -366,7 +372,8 @@ ccr.run_complete <- function(
     sd(single_correctedFCs$corrected_logFCs$avgFC[x[1]:x[2]]))
   
   # update library with match
-  single_correctedFCs <- single_correctedFCs$corrected_logFCs 
+  single_correctedFCs <- single_correctedFCs$corrected_logFCs
+    
   libraryAnnotation_single <- libraryAnnotation_single %>% 
     dplyr::filter(CODE %in% rownames(single_correctedFCs)) 
   libraryAnnotation_single <- libraryAnnotation_single[rownames(single_correctedFCs),]
@@ -2295,8 +2302,8 @@ ccr2.run <- function(
   models_performance <- data.frame(
     position = c("guide1", "guide2"), 
     n = c(nrow(model_guide1$model$model), nrow(model_guide2$model$model)), 
-    cor = c(cor(model_guide1$model$model$avgFC_single, model_guide1$model$model$avgFC), 
-            cor(model_guide2$model$model$avgFC_single, model_guide2$model$model$avgFC)), 
+    cor = c(cor(model_guide1$model$fitted.values, model_guide1$model$model$avgFC), 
+            cor(model_guide2$model$fitted.values, model_guide2$model$model$avgFC)), 
     R2 = c(with(model_guide1$model_summary, 1 - deviance/null.deviance),
            with(model_guide2$model_summary, 1 - deviance/null.deviance)))
   
@@ -2463,8 +2470,8 @@ ccr2.run_nontarget <- function(
   models_performance <- data.frame(
     position = c("guide1", "guide2"), 
     n = c(nrow(model_guide1$model$model), nrow(model_guide2$model$model)), 
-    cor = c(cor(model_guide1$model$model$avgFC_single, model_guide1$model$model$avgFC), 
-            cor(model_guide2$model$model$avgFC_single, model_guide2$model$model$avgFC)), 
+    cor = c(cor(model_guide1$model$fitted.value, model_guide1$model$model$avgFC), 
+            cor(model_guide2$model$fitted.value, model_guide2$model$model$avgFC)), 
     R2 = c(with(model_guide1$model_summary, 1 - deviance/null.deviance),
            with(model_guide2$model_summary, 1 - deviance/null.deviance)))
   
