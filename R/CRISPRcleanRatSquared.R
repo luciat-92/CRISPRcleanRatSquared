@@ -2898,6 +2898,7 @@ ccr2.run_complete <- function(
   
   return(list(dual = dual_FC_correctedFC, 
               dual_gene = dual_FC_gene_correctedFC,
+              single_gw = single_correctedFCs,  
               single = single_correctedFCs_filt,
               pseudo_single_segments = pseudo_single_segments,
               system_solition = pseudo_single_correction,
