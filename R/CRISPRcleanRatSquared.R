@@ -742,7 +742,7 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   
   # NOTE: RACK1, MARCHF5 and INTS6L removed because they have another name in single,
   # how to solve? (partially solved with hg38 matching)
-  
+ 
   # Create matrix to match single x dual SEQ
   match_matrix <- sapply(
     seq_len(nrow(dual_library_seq)), function(id) 
@@ -1472,20 +1472,22 @@ ccr2.solveLinearSys <- function(
   rownames(matrix_interactions) <- pseudo_single_p1_correctedFCs$sgRNA_ID
   colnames(matrix_interactions) <- pseudo_single_p2_correctedFCs$sgRNA_ID
   
-  if (split_graph) {
+  # can be split in multiple componets?
+  combinations_edges <- as.vector(combinations) 
+  combinations_edges <- combinations_edges[combinations_edges %in% dual_FC$sgRNA_ID_pair]
+  combinations_edges <- do.call(rbind, str_split(combinations_edges, pattern = "~"))
+  
+  g <- igraph::graph_from_edgelist(el = combinations_edges, 
+                                   directed = FALSE)
+  groups_g <-  igraph::clusters(g)
+  max_groups <- which.max(groups_g$csize)
+  
+  sub_nodes_small <- names(which(groups_g$membership != max_groups))
+  sub_nodes_large <- names(which(groups_g$membership == max_groups))
+  
+  if (split_graph & length(sub_nodes_small) > 0) {
     
     print("Combinations split, largest connected components solved separately")
-    combinations_edges <- as.vector(combinations) 
-    combinations_edges <- combinations_edges[combinations_edges %in% dual_FC$sgRNA_ID_pair]
-    combinations_edges <- do.call(rbind, str_split(combinations_edges, pattern = "~"))
-    
-    g <- igraph::graph_from_edgelist(el = combinations_edges, 
-                                     directed = FALSE)
-    groups_g <-  igraph::clusters(g)
-    max_groups <- which.max(groups_g$csize)
-    
-    sub_nodes_small <- names(which(groups_g$membership != max_groups))
-    sub_nodes_large <- names(which(groups_g$membership == max_groups))
     
     # solve large system:
     print(paste("Largest connected component with sgRNA n =", length(sub_nodes_large)))
@@ -1505,18 +1507,18 @@ ccr2.solveLinearSys <- function(
     id_small_row <- rownames(matrix_interactions) %in% sub_nodes_small
     id_small_col <- colnames(matrix_interactions) %in% sub_nodes_small
     res_small <- get_pairwise_correction(
-      matrix_interactions = matrix_interactions[id_small_row, id_small_col], 
-      combinations = combinations[id_small_row, id_small_col], 
-      dual_FC = dual_FC, 
-      pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_small_row, ], 
-      pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_small_col, ]
+        matrix_interactions = matrix_interactions[id_small_row, id_small_col], 
+        combinations = combinations[id_small_row, id_small_col], 
+        dual_FC = dual_FC, 
+        pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_small_row, ], 
+        pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_small_col, ]
     )
     
     res_all <- list(df_corr = rbind(res_large$df_corr, res_small$df_corr), 
-                    pseudo_single_correction = rbind(
-                      res_large$pseudo_single_correction, 
-                      res_small$pseudo_single_correction)
-                    )
+                      pseudo_single_correction = rbind(
+                        res_large$pseudo_single_correction, 
+                        res_small$pseudo_single_correction)
+    )
     
   }else{
     
@@ -1549,13 +1551,17 @@ ccr2.solveLinearSys <- function(
     pl_sys <- ggplot(pseudo_single_correction, aes(x = pseudo_single, 
                                                    y = pseudo_single_fitted, 
                                                    color = guide_pos, 
-                                                   label = outliers)) + 
-      geom_point(alpha = 0.7, size = 2) +
+                                                   label = outliers, 
+                                                   size = n)) + 
+      geom_point(alpha = 0.5) +
       geom_text_repel(size = 3, min.segment.length = 0, color = "black") + 
       geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") + 
       theme_bw() + 
       theme(legend.position = "right") + 
-      xlab("Pseudo single correction") + ylab("Fitted correction")
+      xlab("Pseudo single correction") + 
+      ylab("Fitted correction") +
+      scale_size(breaks = c(1, 3, seq(5, max(pseudo_single_correction$n), length.out = 4)),
+        range = c(1, 6))
     print(pl_sys)
     
     pl_out <- ggplot(dual_FC_correctedFC, aes(x = avgFC, 
@@ -1595,7 +1601,8 @@ ccr2.solveLinearSys <- function(
   
   return(list(
     dual_FC = dual_FC_correctedFC, 
-    pseudo_single = pseudo_single_correction))
+    pseudo_single = pseudo_single_correction, 
+    matrix_interactions = matrix_interactions))
   
 }
 
@@ -2991,7 +2998,8 @@ get_pairwise_correction <- function(matrix_interactions,
     pseudo_single_fitted = as.vector(matrix_sys %*% correction_pair), 
     pseudo_single = correction_vect, 
     guide_pos = c(rep(1, nrow(pseudo_single_p1)), 
-                  rep(2, nrow(pseudo_single_p2)))
+                  rep(2, nrow(pseudo_single_p2))), 
+    n = c(pseudo_single_p1$n, pseudo_single_p2$n)
   )
   
   # for plot
