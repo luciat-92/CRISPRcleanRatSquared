@@ -10,7 +10,8 @@ ccr2.run_complete(
   libraryAnnotation_single,
   min_reads = 30,
   libraryAnnotation_dual,
-  dual_count,
+  dual_count = NULL,
+  dual_logFC = NULL,
   EXPname,
   display = FALSE,
   outdir = "./",
@@ -36,6 +37,8 @@ ccr2.run_complete(
 \item{libraryAnnotation_dual}{}
 
 \item{dual_count}{}
+
+\item{dual_logFC}{}
 
 \item{EXPname}{}
 
