@@ -117,8 +117,10 @@ get_input_data <- function(
     print(sprintf("############ load file n. %i ############", idx_file))
     
     dual_count_list[[idx_file]] <- dual_count_list[[idx_file]] %>%
-      dplyr::mutate(ID = paste0(ID, "_lib", idx_file))
-    
+      dplyr::mutate(ID = paste0(ID, "_lib", idx_file)) %>%
+      dplyr::mutate(ID_lib = ID, .after = ID) %>%
+      dplyr::mutate(lib = paste0("lib", idx_file), .after = ID_lib)
+      
     dual_library_list[[idx_file]] <- dual_library_list[[idx_file]] %>%
       dplyr::filter(!is.na(ID)) %>%
       dplyr::mutate(ID = paste0(ID, "_lib", idx_file))
@@ -295,6 +297,255 @@ get_input_data <- function(
   return(list(CNA = CNA, 
               count = dual_count_list, 
               library =  dual_library_list, 
+              CL_name = CL_name, 
+              out_fold = out_fold))
+  
+}
+
+#' Load matched files for dual KO
+#'
+#' get_input_data.v1() load files as indicated in param_file or param_list. 
+#' Must include result_file, library_file and copy_number_file. 
+#' Only one file per type is passed (suitable for different batches combined)
+#' Additional used inputs are input_fold and out_fold (default = "./") and CL_name (default = "./")
+#'
+#' @param param_file 
+#' @param param_list 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+get_input_data.v1 <- function(
+  param_file = NULL,
+  param_list = NULL
+) {
+  
+  if (is.null(param_file) & is.null(param_list)) {
+    stop("one among param_file and param_list must be not NULL")
+  }
+  
+  if (!is.null(param_file)) {
+    # read param_file which contains data location
+    input_info <- suppressWarnings(readr::read_table(
+      param_file, 
+      col_names = FALSE, 
+      show_col_types = FALSE))
+    
+    for (i in 1:nrow(input_info)) {
+      assign(input_info$X1[i], input_info$X2[i])    
+    }
+    
+  }else{
+    # data location passed as input
+    input_info <- param_list
+    for (i in 1:length(input_info)) {
+      assign(names(input_info)[i], input_info[[i]])    
+    }
+  }
+  
+  # check the correct input files were passed
+  if (!exists("input_fold", inherits = F)) {input_fold <- "./"}
+  if (!exists("out_fold", inherits = F)) {out_fold <- "./"}
+  if (!exists("CL_name", inherits = F)) {CL_name <- ""}
+  if (!exists("copy_number_file", inherits = F) | 
+      !exists("result_file", inherits = F) |
+      !exists("library_file", inherits = F)) {
+    stop("Input MUST include copy_number_file, result_file and library_file entries")
+  }
+  
+  dual_result <- readr::read_tsv(sprintf('%s%s', input_fold, result_file), 
+                                 col_types = readr::cols(.default = "?",
+                                                         sgRNA1_WGE_ID = "c", 
+                                                         sgRNA2_WGE_ID = "c", 
+                                                         sgRNA1_Chr = "c", 
+                                                         sgRNA2_Chr = "c"), 
+                                 show_col_types = FALSE)
+  
+  dual_library <- readr::read_tsv(sprintf('%s%s', input_fold, library_file), 
+                                  col_types = readr::cols(.default = "?",
+                                                          sgRNA1_WGE_ID = "c", 
+                                                          sgRNA2_WGE_ID = "c", 
+                                                          sgRNA1_Chr = "c", 
+                                                          sgRNA2_Chr = "c"), 
+                                  show_col_types = FALSE)
+  
+  if (!identical(dual_result$ID_lib, dual_library$ID_lib)) {
+    warning("count and library rows must match, reorder library file")
+    common_ID_lib <- intersect(dual_result$ID_lib, dual_library$ID_lib)
+    dual_result <- dual_result[match(common_ID, dual_result$ID_lib),]
+    dual_library <- dual_library[match(common_ID, dual_library$ID_lib),]
+  }
+  
+  id_change <- grep("CTRL", dual_library$sgRNA1_WGE_ID)
+  if (length(id_change) > 0) {
+    print(sprintf("change CTRL to NONTARGET in position 1 for %i pairs", length(id_change)))
+    dual_library$sgRNA1_WGE_ID[id_change] <- str_replace(
+      string =  dual_library$sgRNA1_WGE_ID[id_change], 
+      pattern = "CTRL", 
+      replacement = "NONTARGET")
+  }
+  
+  id_change <- grep("CTRL", dual_library$sgRNA2_WGE_ID)
+  if (length(id_change) > 0) {
+    print(sprintf("change CTRL to NONTARGET in position 2 for %i pairs", length(id_change)))
+    dual_library$sgRNA2_WGE_ID[id_change] <- str_replace(
+      string =  dual_library$sgRNA2_WGE_ID[id_change], 
+      pattern = "CTRL", 
+      replacement = "NONTARGET")
+  }
+  
+  id_nontarget <- grep("NONTARGET", dual_result$Gene1)
+  if (length(id_nontarget) > 0) {
+    print(sprintf("assign missing sgRNA1_ID for %i NONTARGET pairs", length(id_nontarget)))
+    dual_result$sgRNA1_WGE_ID[id_nontarget] <- dual_result$Gene1[id_nontarget]
+    dual_library$sgRNA1_WGE_ID[id_nontarget] <- dual_result$Gene1[id_nontarget]
+  }
+  
+  id_nontarget <- grep("NONTARGET", dual_result$Gene2)
+  if (length(id_nontarget) > 0) {
+    print(sprintf("assign missing sgRNA2_ID for %i NONTARGET pairs", length(id_nontarget)))
+    dual_result$sgRNA1_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
+    dual_library$sgRNA2_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
+  }
+  
+  # if NA in count ID, use gene ID
+  id_na <- which(is.na(dual_result$sgRNA1_WGE_ID))
+  if (length(id_na) > 0) {
+    print(sprintf("assign missing sgRNA1_ID for %i pairs", length(id_na)))
+    dual_result$sgRNA1_WGE_ID[id_na] <- dual_result$Gene1[id_na]
+    dual_library$sgRNA1_WGE_ID[id_na] <- dual_result$Gene1[id_na]
+    dual_library$sgRNA1_Approved_Symbol[id_na] <- dual_result$Gene1[id_na]
+  }
+  
+  id_na <- which(is.na(dual_result$sgRNA2_WGE_ID))
+  if (length(id_na) > 0) {
+    print(sprintf("assign missing sgRNA2_ID for %i pairs", length(id_na)))
+    dual_result$sgRNA2_WGE_ID[id_na] <- dual_result$Gene2[id_na]
+    dual_library$sgRNA2_WGE_ID[id_na] <- dual_result$Gene2[id_na]
+    dual_library$sgRNA2_Approved_Symbol[id_na] <- dual_result$Gene2[id_na]
+  }
+  
+  id_na_lib <- which(is.na(dual_library$sgRNA1_Approved_Symbol))
+  if (length(id_na_lib) > 0) {
+    print(sprintf("assign missing Gene1 name in library for %i pairs", length(id_na_lib)))
+    dual_library$sgRNA1_Approved_Symbol[id_na_lib] <- dual_result$Gene1[id_na_lib]
+  }
+  
+  id_na_lib <- which(is.na(dual_library$sgRNA2_Approved_Symbol))
+  if (length(id_na_lib) > 0) {
+    print(sprintf("assign missing Gene2 name in library for %i pairs", length(id_na_lib)))
+    dual_library$sgRNA2_Approved_Symbol[id_na_lib] <- dual_result$Gene2[id_na_lib]
+  }
+  
+  # same sequence with multiple ID, replace
+  dual_library_seq <- data.frame(
+    GI_ID = rep(dual_library$ID, 2),
+    ID = c(dual_library$sgRNA1_WGE_ID, 
+           dual_library$sgRNA2_WGE_ID), 
+    GENES = c(dual_library$sgRNA1_Approved_Symbol, 
+              dual_library$sgRNA2_Approved_Symbol), 
+    CHR = c(dual_library$sgRNA1_Chr, 
+            dual_library$sgRNA2_Chr), 
+    START = c(dual_library$sgRNA1_Start, 
+              dual_library$sgRNA2_Start), 
+    END = c(dual_library$sgRNA1_End, 
+            dual_library$sgRNA2_End), 
+    LIBRARY = c(dual_library$sgRNA1_Library, 
+                dual_library$sgRNA2_Library), 
+    SEQ = c(dual_library$sgRNA1_WGE_Sequence, 
+            dual_library$sgRNA2_WGE_Sequence)
+  ) %>%
+    dplyr::mutate(CHR_START_END_SEQ = paste(CHR, START, END, SEQ, sep = "_"))
+  
+  multiple_ID <- dual_library_seq %>% 
+    dplyr::group_by(CHR_START_END_SEQ) %>%
+    dplyr::summarise(
+      SEQ = unique(SEQ),
+      n_ID = length(unique(ID)),
+      ID_all = paste0(sort(unique(ID)), collapse = ","), 
+      n_gene = length(unique(GENES)),
+      gene_all = paste0(sort(unique(GENES)), collapse = ",")) %>%
+    dplyr::filter(n_gene > 1)
+  
+  if (nrow(multiple_ID) > 0) {
+    
+    print(sprintf("reassign %i sgRNA1 or sgRNA2 with multiple genes/IDs but same CHR_START_END_SEQ", 
+                  nrow(multiple_ID)))
+    
+    for (idx in seq_len(nrow(multiple_ID))) {
+      
+      # sgRNA1
+      id_match <- which(dual_library$sgRNA1_WGE_Sequence == multiple_ID$SEQ[idx])
+      if (length(id_match) > 0) {
+        dual_library$sgRNA1_WGE_ID[id_match] <- multiple_ID$ID_all[idx]   
+        dual_library$sgRNA1_Approved_Symbol[id_match] <- multiple_ID$gene_all[idx] 
+        dual_result$sgRNA1_WGE_ID[id_match] <- multiple_ID$ID_all[idx]   
+        dual_result$Gene1[id_match] <- multiple_ID$gene_all[idx] 
+      }
+      # sgRNA2
+      id_match <- which(dual_library$sgRNA2_WGE_Sequence == multiple_ID$SEQ[idx])
+      if (length(id_match) > 0) {
+        dual_library$sgRNA2_WGE_ID[id_match] <- multiple_ID$ID_all[idx]   
+        dual_library$sgRNA2_Approved_Symbol[id_match] <- multiple_ID$gene_all[idx] 
+        dual_result$sgRNA2_WGE_ID[id_match] <- multiple_ID$ID_all[idx]   
+        dual_result$Gene2[id_match] <- multiple_ID$gene_all[idx]   
+      }
+    }
+  }
+  
+  dual_library <- dual_library %>% 
+    dplyr::mutate(COMB_ID =  paste(sgRNA1_WGE_Sequence, sgRNA2_WGE_Sequence, sep = "_"))
+  
+  # chr X -> 23, chr Y -> 24
+  dual_library <- dual_library %>% 
+    dplyr::mutate(
+      sgRNA1_Chr = dplyr::case_when(
+        sgRNA1_Chr == "X" ~ "23",
+        sgRNA1_Chr == "Y" ~ "24",
+        # .default = as.character(sgRNA1_Chr)), 
+        TRUE ~ as.character(sgRNA1_Chr)), 
+      sgRNA2_Chr = dplyr::case_when(
+        sgRNA2_Chr == "X" ~ "23",
+        sgRNA2_Chr == "Y" ~ "24",
+        TRUE ~ as.character(sgRNA2_Chr))
+      #.default = as.character(sgRNA2_Chr))
+    ) %>%
+    dplyr::mutate(
+      sgRNA1_Chr = as.numeric(sgRNA1_Chr), 
+      sgRNA2_Chr = as.numeric(sgRNA2_Chr)
+    )
+  
+  CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
+                           show_col_types = FALSE) %>%
+    dplyr::mutate(
+      CHROM = dplyr::case_when(
+        CHROM == "chrX" ~ "chr23",
+        CHROM == "chrY" ~ "chr24",
+        TRUE ~ as.character(CHROM))
+      # .default = as.character(CHROM))
+    )
+  
+  if ("Sampleid" %in% colnames(CNA)) {
+    CL_name_unif <- toupper(str_replace_all(CL_name, "[-|_]", ""))
+    CNA <- CNA %>% 
+      dplyr::filter(toupper(str_replace_all(Sampleid, "[-|_]", "")) %in% CL_name_unif)
+    if (nrow(CNA) == 0) {
+      stop(sprintf("no CN info available for %s", CL_name))
+    }
+  }
+  
+  # if CL_name in columns dual_results, get only that
+  new_name <- sprintf("%s_logFC", CL_name)
+  dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
+    dplyr::rename(Note = Note1, 
+                  MyNote = Note2, 
+                  Gene_Pair = Gene_pair,
+                  !!new_name := CL_name)
+  
+  return(list(CNA = CNA, 
+              result = dual_result_CL, 
+              library =  dual_library, 
               CL_name = CL_name, 
               out_fold = out_fold))
   
@@ -502,8 +753,8 @@ ccr2.scale_pos_neg <- function(dual_FC, corrected = FALSE){
     name_var <- "correctedFC"
   }
   
-  median_neg <-  median(dual_FC[dual_FC$info == "NegativeControls", name_var], na.rm = TRUE)
-  median_pos <-  median(dual_FC[dual_FC$info == "PositiveControls", name_var], na.rm = TRUE)
+  median_neg <-  median(dual_FC[dual_FC$info == "NegativeControls", name_var, drop = T], na.rm = TRUE)
+  median_pos <-  median(dual_FC[dual_FC$info == "PositiveControls", name_var, drop = T], na.rm = TRUE)
   dual_FC <- dual_FC %>%
     dplyr::mutate(tmp = get(name_var)) %>%
     dplyr::mutate(tmp_scaled = (tmp - median_neg)/(median_neg - median_pos)) %>%
@@ -841,7 +1092,7 @@ ccr2.logFCs2chromPos <- function(
 ) {
   
   dual_library <-  dual_library %>% 
-    dplyr::select(ID, sgRNA1_Library, 
+    dplyr::select(ID, ID_lib, lib, sgRNA1_Library, 
                   sgRNA1_WGE_ID, sgRNA1_WGE_Sequence, 
                   sgRNA1_Chr, sgRNA1_Start, sgRNA1_End, 
                   sgRNA2_Library, 
@@ -853,7 +1104,7 @@ ccr2.logFCs2chromPos <- function(
   # dual_FC <- dual_FC %>% dplyr::select(-dplyr::ends_with("_Scaled_logFC"))
   avg_FC <- dual_FC %>% 
     # dplyr::filter(.[[9]] >= min_reads) %>%
-    dplyr::select(ID, MyNote, Note, Gene_Pair, Gene1, Gene2, 
+    dplyr::select(ID, ID_lib, lib, MyNote, Note, Gene_Pair, Gene1, Gene2, 
                   # dplyr::ends_with("_Scaled_logFC")) %>%
                   dplyr::ends_with("_logFC")) %>%
     dplyr::rename(info = Note, info_subtype = MyNote) %>% 
@@ -862,7 +1113,7 @@ ccr2.logFCs2chromPos <- function(
   avg_FC <-  avg_FC %>% dplyr::select(-dplyr::ends_with("_logFC"))
   
   # merge with position info
-  combined <- dplyr::left_join(avg_FC, dual_library, by = "ID") %>%
+  combined <- dplyr::left_join(avg_FC, dual_library, by = c("ID_lib", "ID", "lib") ) %>%
     dplyr::mutate(sgRNA1_BP = sgRNA1_Start + (sgRNA1_End - sgRNA1_Start)/2, .after = sgRNA1_End) %>%
     dplyr::mutate(sgRNA2_BP = sgRNA2_Start + (sgRNA2_End - sgRNA2_Start)/2, .after = sgRNA2_End)
   
@@ -1796,7 +2047,8 @@ ccr2.plotCNA <- function(
   }
   
   df_plot <- data.frame(info_subtype = rep(dual_FC_withCNA$info_subtype, 2),
-                        logFC = c(dual_FC_withCNA[, var_name], dual_FC_withCNA[, var_name_corrected]), 
+                        logFC = c(dual_FC_withCNA[, var_name, drop = TRUE], 
+                                  dual_FC_withCNA[, var_name_corrected, drop = TRUE]), 
                         Sum_CN = rep(dual_FC_withCNA$Sum_CN, 2), 
                         Gene1_CN = rep(dual_FC_withCNA$Gene1_CN, 2), 
                         Gene2_CN = rep(dual_FC_withCNA$Gene2_CN, 2), 
@@ -1915,7 +2167,8 @@ ccr2.plotCNAdensity <- function(
       TRUE ~ "Others"))
 
   df_plot <- data.frame(
-    logFC = c(dual_FC_withCNA[, var_name], dual_FC_withCNA[, var_name_corrected]),
+    logFC = c(dual_FC_withCNA[, var_name, drop = T], 
+              dual_FC_withCNA[, var_name_corrected, drop = T]),
     CN_class = rep(dual_FC_withCNA$CN_class, 2), 
     type = c(rep("pre-CRISPRCleanR^2", nrow(dual_FC_withCNA)), 
              rep("post-CRISPRCleanR^2", nrow(dual_FC_withCNA))), 
@@ -2192,11 +2445,13 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC,
   
   dual_FC <- dual_FC[!is.na(dual_FC$correction),]
   
-  name_var_y <- "avgFC_scaled"
+  # name_var_y <- "avgFC_scaled" # use the actual values, not scaled
+  name_var_y <- "avgFC"
   name_var_x <- "bliss_zscore"
   title_pl <- "Uncorrected"
   if (corrected) {
-    name_var_y <- "correctedFC_scaled"
+    # name_var_y <- "correctedFC_scaled" # use the actual values, not scaled
+    name_var_y <- "correctedFC"
     name_var_x <- "bliss_zscore_corrected"
     title_pl <- "Corrected"
   }
@@ -2585,6 +2840,7 @@ ccr2.run_nontarget <- function(
 #' @param saveFormat 
 #' @param libraryAnnotation_dual 
 #' @param dual_count 
+#' @param dual_logFC 
 #' @param correctGW 
 #' @param excludeGene_plot 
 #' @param CNA 
@@ -2602,7 +2858,8 @@ ccr2.run_complete <- function(
   libraryAnnotation_single,  
   min_reads = 30, 
   libraryAnnotation_dual, 
-  dual_count, 
+  dual_count = NULL,
+  dual_logFC = NULL,
   EXPname,
   display = FALSE, 
   outdir = "./", 
@@ -2615,6 +2872,10 @@ ccr2.run_complete <- function(
   weighted_reg = TRUE,
   ...
 ) {
+  if ((is.null(dual_count) & is.null(dual_logFC)) | 
+      (!is.null(dual_count) & !is.null(dual_logFC))) {
+    stop("ONLY ONE between dual_count and dual_logFC MUST be not NULL")
+  }
   
   #################################
   ### get single screens output ###
@@ -2642,12 +2903,16 @@ ccr2.run_complete <- function(
   
   ###############################      
   ### get dual screen output ###
-  dual_FC <- ccr2.NormfoldChanges(
-    Dframe = dual_count, 
-    min_reads = min_reads)
+  if (!is.null(dual_count)) {
+    print("Convert count to logFCs")
+    dual_FC <- ccr2.NormfoldChanges(
+      Dframe = dual_count, 
+      min_reads = min_reads)  
+    dual_logFC <- dual_FC$logFCs
+  }
   
   dual_FC <- ccr2.logFCs2chromPos(
-    dual_FC = dual_FC$logFCs, 
+    dual_FC = dual_logFC, 
     dual_library = libraryAnnotation_dual)
   
   # get singletons averages:
@@ -2857,6 +3122,8 @@ ccr2.run_complete <- function(
     dplyr::summarise(
       n_guides = dplyr::n(),
       ID = paste0(ID, collapse = ","), 
+      ID_lib = paste0(ID_lib, collapse = ","), 
+      lib = paste0(lib, collapse = ","), 
       info_subtype = paste0(unique(info_subtype), collapse = ","), 
       info = paste0(unique(info), collapse = ","), 
       Gene1 = unique(Gene1), 
@@ -2867,23 +3134,30 @@ ccr2.run_complete <- function(
       Gene2_Chr = paste0(unique(sgRNA2_Chr), collapse = ","), 
       correction = median(correction),
       avgFC = median(avgFC),
-      avgFC_scaled = median(avgFC_scaled), 
+      # avgFC_scaled = median(avgFC_scaled), 
       bliss_zscore = median(bliss_zscore), 
       correctedFC = median(correctedFC),
-      correctedFC_scaled = median(correctedFC_scaled), 
+      # correctedFC_scaled = median(correctedFC_scaled), 
       bliss_zscore_corrected = median(bliss_zscore_corrected)) %>%
-    ungroup()
+    dplyr::ungroup()
+  
+  # center on positive and negative classes
+  # dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC)
+  # dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC, 
+  #                                           corrected = TRUE)
   
   # plot bliss vs avgFC
   top_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
                                          corrected = TRUE, 
+                                         THR_FC = 0, THR_BLISS = 0,
                                          EXPname = EXPname, 
                                          saveToFig = saveToFig, 
                                          saveFormat = saveFormat,
                                          outdir = outdir)
   
-  top_gene_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC, 
+  top_gene_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC,
                                              corrected = TRUE, 
+                                             THR_FC = 0, THR_BLISS = 0,
                                              EXPname = EXPname, 
                                              saveToFig = saveToFig, 
                                              saveFormat = saveFormat,
@@ -2891,12 +3165,14 @@ ccr2.run_complete <- function(
   
   top_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
                                            corrected = FALSE, 
+                                           THR_FC = 0, THR_BLISS = 0,
                                            EXPname = EXPname, 
                                            saveToFig = saveToFig, 
                                            saveFormat = saveFormat,
                                            outdir = outdir)
   
   top_gene_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC, 
+                                              THR_FC = 0, THR_BLISS = 0,
                                               corrected = FALSE, 
                                               EXPname = EXPname, 
                                               saveToFig = saveToFig, 
