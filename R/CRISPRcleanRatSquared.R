@@ -405,7 +405,7 @@ get_input_data.v1 <- function(
   id_nontarget <- grep("NONTARGET", dual_result$Gene2)
   if (length(id_nontarget) > 0) {
     print(sprintf("assign missing sgRNA2_ID for %i NONTARGET pairs", length(id_nontarget)))
-    dual_result$sgRNA1_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
+    dual_result$sgRNA2_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
     dual_library$sgRNA2_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
   }
   
@@ -492,6 +492,7 @@ get_input_data.v1 <- function(
         dual_result$Gene2[id_match] <- multiple_ID$gene_all[idx]   
       }
     }
+    dual_result$Gene_pair <- paste(dual_result$Gene1, dual_result$Gene2, sep = "~")
   }
   
   dual_library <- dual_library %>% 
@@ -516,6 +517,48 @@ get_input_data.v1 <- function(
       sgRNA2_Chr = as.numeric(sgRNA2_Chr)
     )
   
+  
+  # merge common_pairs across libraries via mean
+  unique_fun <- function(x){paste0(unique(x), collapse = ",")}
+  
+  tmp_lib1 <- dual_library %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise_all(unique_fun)
+  
+  tmp_lib2 <- dual_library %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise(n_pairs = dplyr::n())
+  
+  dual_library <- dplyr::full_join(tmp_lib1, 
+                       tmp_lib2, 
+                       by = "SEQ_pair")
+                    
+  # if CL_name in columns dual_results, get only that
+  new_name <- sprintf("%s_logFC", CL_name)
+  dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
+    dplyr::rename(Note = Note1, 
+                  MyNote = Note2, 
+                  Gene_Pair = Gene_pair,
+                  !!new_name := CL_name)
+  
+  tmp_res1 <- dual_result_CL %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise_if(is.character, unique_fun)
+  
+  tmp_res2 <- dual_result_CL %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise(logFC =  mean(!!sym(sprintf("%s_logFC", CL_name))),  
+                     n_pairs = dplyr::n())
+  colnames(tmp_res2)[colnames(tmp_res2) == "logFC"] <- sprintf("%s_logFC", CL_name)
+  dual_result_CL <- dplyr::full_join(tmp_res1, 
+                       tmp_res2, 
+                       by = "SEQ_pair")
+  
+  if (!identical(dual_result_CL$ID_lib, dual_library$ID_lib)) {
+   stop("count and library rows SHOULD match, check what caused this...")
+  }
+  
+  # load CNA
   CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
                            show_col_types = FALSE) %>%
     dplyr::mutate(
@@ -535,13 +578,7 @@ get_input_data.v1 <- function(
     }
   }
   
-  # if CL_name in columns dual_results, get only that
-  new_name <- sprintf("%s_logFC", CL_name)
-  dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
-    dplyr::rename(Note = Note1, 
-                  MyNote = Note2, 
-                  Gene_Pair = Gene_pair,
-                  !!new_name := CL_name)
+  
   
   return(list(CNA = CNA, 
               result = dual_result_CL, 
