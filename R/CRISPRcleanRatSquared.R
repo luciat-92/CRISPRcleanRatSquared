@@ -498,6 +498,25 @@ get_input_data.v1 <- function(
   dual_library <- dual_library %>% 
     dplyr::mutate(COMB_ID =  paste(sgRNA1_WGE_Sequence, sgRNA2_WGE_Sequence, sep = "_"))
   
+  # merge common_pairs across libraries via mean
+  unique_fun <- function(x){
+    collap <- paste0(unique(x), collapse = ",")
+    collap[collap == "NA"] <- NA
+    return(collap)
+  }
+  
+  tmp_lib1 <- dual_library %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise_all(unique_fun)
+  
+  tmp_lib2 <- dual_library %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise(n_pairs = dplyr::n())
+  
+  dual_library <- dplyr::full_join(tmp_lib1, 
+                       tmp_lib2, 
+                       by = "SEQ_pair")
+  
   # chr X -> 23, chr Y -> 24
   dual_library <- dual_library %>% 
     dplyr::mutate(
@@ -514,25 +533,13 @@ get_input_data.v1 <- function(
     ) %>%
     dplyr::mutate(
       sgRNA1_Chr = as.numeric(sgRNA1_Chr), 
-      sgRNA2_Chr = as.numeric(sgRNA2_Chr)
+      sgRNA2_Chr = as.numeric(sgRNA2_Chr), 
+      sgRNA1_Start = as.numeric(sgRNA1_Start), 
+      sgRNA2_Start = as.numeric(sgRNA2_Start), 
+      sgRNA1_End = as.numeric(sgRNA1_End), 
+      sgRNA2_End = as.numeric(sgRNA2_End), 
     )
   
-  
-  # merge common_pairs across libraries via mean
-  unique_fun <- function(x){paste0(unique(x), collapse = ",")}
-  
-  tmp_lib1 <- dual_library %>%
-    dplyr::group_by(SEQ_pair) %>%
-    dplyr::summarise_all(unique_fun)
-  
-  tmp_lib2 <- dual_library %>%
-    dplyr::group_by(SEQ_pair) %>%
-    dplyr::summarise(n_pairs = dplyr::n())
-  
-  dual_library <- dplyr::full_join(tmp_lib1, 
-                       tmp_lib2, 
-                       by = "SEQ_pair")
-                    
   # if CL_name in columns dual_results, get only that
   new_name <- sprintf("%s_logFC", CL_name)
   dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
@@ -1032,10 +1039,18 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   # how to solve? (partially solved with hg38 matching)
  
   # Create matrix to match single x dual SEQ
+  # ALTERNATIVE WITH LIST, TODO: RM
+  # match_matrix_tmp <- list()
+  # for (id in 1:nrow(dual_library_seq)) {
+  #   match_matrix_tmp[[id]] <- match_dual_to_single(dual_library_seq[id,], single_library_seq)
+  # }
+  # match_matrix <- do.call(cbind, match_matrix_tmp)
+  # colnames(match_matrix) <- dual_library_seq$CHR_GENES_SEQ
+  
   match_matrix <- sapply(
-    seq_len(nrow(dual_library_seq)), function(id) 
-      match_dual_to_single(dual_library_seq[id,], single_library_seq)
-    )
+   seq_len(nrow(dual_library_seq)), function(id)
+     match_dual_to_single(dual_library_seq[id,], single_library_seq)
+   )
   colnames(match_matrix) <- dual_library_seq$CHR_GENES_SEQ
   
   if (any(rowSums(match_matrix) > 1)) {
