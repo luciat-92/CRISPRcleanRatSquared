@@ -21,7 +21,6 @@ ccr2.run_complete(
   excludeGene_plot = NULL,
   CNA,
   CN_thr = 8,
-  weighted_reg = TRUE,
   ...
 )
 }
@@ -57,8 +56,6 @@ ccr2.run_complete(
 \item{CNA}{}
 
 \item{CN_thr}{}
-
-\item{weighted_reg}{}
 
 \item{...}{}
 }

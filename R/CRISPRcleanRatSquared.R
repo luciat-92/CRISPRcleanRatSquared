@@ -1366,7 +1366,6 @@ ccr2.createPseudoSingle_combine <- function(
 #' @param outdir 
 #' @param EXPname 
 #' @param pseudo_single_FC 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -1376,7 +1375,6 @@ ccr2.modelSingleVSPseudoSingle <- function(
   pseudo_single_FC, 
   guide_id, 
   correctGW = NULL,
-  weighted_reg = TRUE,
   display = TRUE, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
@@ -1386,18 +1384,20 @@ ccr2.modelSingleVSPseudoSingle <- function(
   
   # remove NA in single screens
   matched_df <- pseudo_single_FC[!is.na(pseudo_single_FC$ID_single), ]
-  if (!weighted_reg) {
-    matched_df$n <- rep(1, nrow(matched_df))
-  }
-  fmla <- "avgFC ~ 0 + avgFC_single"
+  # matched_df$n_bin <- cut(
+  #  matched_df$n, 
+  #  breaks = c(0, 1, seq(10, round(max(matched_df$n), -1) + 10, 10))
+  #  )
+  # matched_df$n <- factor(matched_df$n,levels = sort(unique(matched_df$n)))
+  fmla <- "avgFC ~ 0 + avgFC_single + n"
   fit_model <- glm(formula = as.formula(fmla), 
                    data = matched_df,
-                   weights = matched_df$n, 
                    family = gaussian(link = "identity"))
   # remove outliers
-  cooksD <- cooks.distance(fit_model)
+  cooksD <- cooks.distance(fit_model) 
+  cooksD <- cooksD[!is.na(cooksD)]
   # remove extreme cases (quatile > 0.99)
-  thr_influential <- quantile(cooksD, prob = 0.99)
+  thr_influential <- quantile(cooksD, prob = 0.99, na.rm = T)
   influential <- cooksD[cooksD > thr_influential]
   # influential <- cooksD[(cooksD > (1.5 * mean(cooksD, na.rm = TRUE)))]
 
@@ -1409,7 +1409,6 @@ ccr2.modelSingleVSPseudoSingle <- function(
                                         matched_df_filt$sgRNA_ID)
     fit_model <- glm(formula = as.formula(fmla), 
                      data = matched_df_filt,
-                     weights = matched_df_filt$n, 
                      family = gaussian(link = "identity"))  
     rm_guides_cooks <- matched_df[names(influential), ]
     
@@ -1423,13 +1422,16 @@ ccr2.modelSingleVSPseudoSingle <- function(
                         avgFC_single = fit_model$model$avgFC_single,
                         fitted_avgFC = fit_model$fitted.values,
                         residuals_avgFC = residuals(fit_model),
-                        n_guides_in_mean = as.numeric(fit_model$weights))
+                        n_guides_in_mean = as.numeric(as.character(fit_model$model$n)))
+                        # n_guides_in_mean = as.numeric(fit_model$weights))
                         # lib = dual_collapsed_filt$lib)
   
   if (saveToFig) {
     display <- TRUE
     file_name_comp <- sprintf("%s%s_PseudoGuide%i_vs_single.%s", 
                               outdir, EXPname, guide_id, saveFormat)
+    file_name_comp_pred <- sprintf("%s%s_PseudoGuide%i_vs_FittedPseudoGuide%i.%s", 
+                              outdir, EXPname, guide_id, guide_id, saveFormat)
     file_name_resid <- sprintf("%s%s_PseudoGuide%i_vs_single_resid.%s", 
                                outdir, EXPname, guide_id, saveFormat)
     file_name_qqplot <- sprintf("%s%s_PseudoGuide%i_vs_single_qqplot.%s", 
@@ -1443,18 +1445,18 @@ ccr2.modelSingleVSPseudoSingle <- function(
     breaks_size <- round(seq(n_min, 
                              n_max, length.out = 6))
     text_corr <- data.frame(
-      label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC_single, df_plot$avgFC)), 
+      label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC, df_plot$fitted_avgFC)), 
       xpos = -Inf, 
       ypos = Inf)
     
-    pl_comp <- ggplot(df_plot, aes(x = avgFC_single, y = avgFC)) + 
-      geom_line(aes(y =  fitted_avgFC), colour = "red", linewidth = 1) + 
-      geom_abline(intercept = 0, slope = 1, 
-                  colour = "black", size = 1, linetype = "dashed") + 
-      geom_point(aes(y = avgFC, 
+    pl_comp_pred <- ggplot(df_plot, aes(x = avgFC, y =  fitted_avgFC)) + 
+      geom_point(aes(y = fitted_avgFC, 
                      # size = n_guides_in_mean, 
                      color = n_guides_in_mean), 
                  alpha = 0.5) +
+      # geom_line(aes(y =  fitted_avgFC), colour = "red", linewidth = 1) + 
+      geom_abline(intercept = 0, slope = 1, 
+                  colour = "black", size = 1, linetype = "dashed") + 
       #geom_smooth(formula = y ~ 0 + x, method = "loess", 
       #            span = 0.3, 
       #            method.args = list(degree = 2)) + 
@@ -1464,18 +1466,47 @@ ccr2.modelSingleVSPseudoSingle <- function(
             legend.position = "bottom", 
             plot.title = element_text(hjust = 0.5)) + 
       scale_colour_viridis_c(breaks = breaks_size) +
-      # scale_size_continuous(breaks = breaks_size) + 
       geom_text(data = text_corr, 
                 aes(label = label, x = xpos, y = ypos), size = 5, 
                 hjust = -0.1, vjust = 1.1, inherit.aes = F) +
-      ylab("Pseudo Single avgFC") + 
+      xlab("Pseudo Single avgFC") + 
+      ylab("Fitted Pseudo Single avgFC") + 
+      ggtitle(sprintf("Guide position %i", guide_id))
+    print(pl_comp_pred)
+    
+    text_corr <- data.frame(
+      label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC, df_plot$avgFC_single)), 
+      xpos = -Inf, 
+      ypos = Inf)
+    
+    pl_comp <- ggplot(df_plot, aes(x = avgFC_single, y =  avgFC)) + 
+      geom_line(aes(y =  fitted_avgFC), colour = "red", linewidth = 1) + 
+      geom_point(aes(y =  avgFC, 
+                     # size = n_guides_in_mean, 
+                     color = n_guides_in_mean), 
+                     alpha = 0.5) +
+      geom_abline(intercept = 0, slope = 1, 
+                  colour = "black", size = 1, linetype = "dashed") + 
+      #geom_smooth(formula = y ~ 0 + x, method = "loess", 
+      #            span = 0.3, 
+      #            method.args = list(degree = 2)) + 
+      theme_bw() + 
+      theme(axis.title = element_text(size = 12), 
+            axis.text = element_text(size = 11), 
+            legend.position = "bottom", 
+            plot.title = element_text(hjust = 0.5)) + 
+      scale_colour_viridis_c(breaks = breaks_size) +
+      geom_text(data = text_corr, 
+                aes(label = label, x = xpos, y = ypos), size = 5, 
+                hjust = -0.1, vjust = 1.1, inherit.aes = F) +
       xlab("Single avgFC") + 
+      ylab("Pseudo Single avgFC") + 
       ggtitle(sprintf("Guide position %i", guide_id))
     print(pl_comp)
     
     # residuals VS fitted 
     df_plot$outliers <- ""
-    df_plot$outliers[abs(df_plot$residuals_avgFC) > 10] <- df_plot$id[abs(df_plot$residuals_avgFC) > 10]
+    df_plot$outliers[abs(df_plot$residuals_avgFC) > 2] <- df_plot$id[abs(df_plot$residuals_avgFC) > 2]
     pl_pred_vs_res <- ggplot(df_plot, aes(x = fitted_avgFC, 
                                           y = residuals_avgFC)) + 
       geom_text_repel(color = "black", aes(label = outliers), 
@@ -1524,6 +1555,7 @@ ccr2.modelSingleVSPseudoSingle <- function(
   
   if (saveToFig) {
     ggsave(filename = file_name_comp, plot = pl_comp, width = 4.5, height = 5.5)
+    ggsave(filename = file_name_comp_pred, plot = pl_comp_pred, width = 4.5, height = 5.5)
     ggsave(filename = file_name_resid, plot = pl_pred_vs_res, width = 6, height = 5)
     ggsave(filename = file_name_qqplot, plot = pl_qq, width = 5, height = 5)
   }
@@ -1553,9 +1585,16 @@ ccr2.injectData <- function(
   correctGW = NULL
 ) { 
   
+  # set n equal to the value for library combinations, rationale: class with the majority of common pairs!
+  #id_libcomb <- grepl("LibraryCombinations", pseudo_single_FC$info_subtype)
+  # n_fixed <- names(which.max(table(pseudo_single_FC$n[id_libcomb])))
+  n_fixed <- 1
+  print(paste0("Fixed n_guides_in_mean for library combinations: ", n_fixed))
+  
   ## predict on single guides (make a new function) ##
   single_FC <- single_FC %>% 
-    dplyr::rename(avgFC_single = avgFC, correction_single = correction)
+    dplyr::rename(avgFC_single = avgFC, correction_single = correction) %>%
+    dplyr::mutate(n = n_fixed)
   
   pseudo_single_GW <- predict(model_single_to_pseudo, newdata = single_FC)
   pseudo_single_GW <- single_FC[, 1:7] %>% 
@@ -2549,7 +2588,6 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC,
 #' @param outdir 
 #' @param correctGW 
 #' @param ... 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2565,7 +2603,6 @@ ccr2.run <- function(
   display = TRUE, 
   saveFormat = NULL, 
   outdir = "./", 
-  weighted_reg = TRUE,
   correctGW, 
   ...
 ) {
@@ -2599,8 +2636,7 @@ ccr2.run <- function(
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   model_guide2 <- ccr2.modelSingleVSPseudoSingle(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
@@ -2610,8 +2646,7 @@ ccr2.run <- function(
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   models_performance <- data.frame(
     position = c("guide1", "guide2"), 
@@ -2725,7 +2760,6 @@ ccr2.run <- function(
 #' @param saveFormat 
 #' @param outdir 
 #' @param correctGW 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2741,7 +2775,6 @@ ccr2.run_nontarget <- function(
   display = TRUE, 
   saveFormat = NULL, 
   outdir = "./", 
-  weighted_reg = TRUE,
   correctGW
 ) {
   
@@ -2768,8 +2801,7 @@ ccr2.run_nontarget <- function(
     display = display,  
     saveFormat = saveFormat,
     outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   model_guide2 <- ccr2.modelSingleVSPseudoSingle(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
@@ -2778,8 +2810,7 @@ ccr2.run_nontarget <- function(
     display = display,  
     saveFormat = saveFormat,
     outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   models_performance <- data.frame(
     position = c("guide1", "guide2"), 
@@ -2898,7 +2929,6 @@ ccr2.run_nontarget <- function(
 #' @param CNA 
 #' @param CN_thr 
 #' @param ... 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2920,8 +2950,7 @@ ccr2.run_complete <- function(
   correctGW, 
   excludeGene_plot = NULL, 
   CNA, 
-  CN_thr = 8, 
-  weighted_reg = TRUE,
+  CN_thr = 8,
   ...
 ) {
   if ((is.null(dual_count) & is.null(dual_logFC)) | 
@@ -2994,8 +3023,7 @@ ccr2.run_complete <- function(
     saveFormat = saveFormat,
     outdir = outdir, 
     EXPname = EXPname, 
-    correctGW = correctGW, 
-    weighted_reg = weighted_reg
+    correctGW = correctGW
   )
   dual_FC_nt_correctedFC <- tmp$dual_FC
   model_perf_nt <-  tmp$model_perf %>% 
@@ -3015,8 +3043,7 @@ ccr2.run_complete <- function(
     saveFormat = saveFormat,
     outdir = outdir, 
     EXPname = EXPname, 
-    correctGW = correctGW, 
-    weighted_reg = weighted_reg,
+    correctGW = correctGW,
     ...
   )
   
