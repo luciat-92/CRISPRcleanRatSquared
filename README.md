@@ -1,7 +1,8 @@
 # CRISPRcleanR^2
 
-v0.4.0: Correct combinatorial screens:
+v0.4.1: Correct combinatorial screens:
 It can handle both logFC and count as input. Two functions to load input: multiple batches split or one unique file with batches combined.
+If multiple batches are available, guide pairs in common are merged taking the average.
 All guides (apart from non-target VS non-target) are corrected
 - collpase to 1 dimension (position 1 and 2)
 - match with single screenings of the same cell line and create a model to map
@@ -17,3 +18,5 @@ Update v0.3.2: Fix CN > 9 set to 8, CN rounded
 Update v0.3.3: remove median logFC from GW single screen
 
 Update v0.4.0: Adapt to work with logFC (merged across batches) as input
+
+Update v0.4.1: Take avg of common guide pairs across batches, change the function for passing pseudo single vs single
