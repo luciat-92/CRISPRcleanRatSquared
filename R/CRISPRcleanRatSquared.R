@@ -405,7 +405,7 @@ get_input_data.v1 <- function(
   id_nontarget <- grep("NONTARGET", dual_result$Gene2)
   if (length(id_nontarget) > 0) {
     print(sprintf("assign missing sgRNA2_ID for %i NONTARGET pairs", length(id_nontarget)))
-    dual_result$sgRNA1_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
+    dual_result$sgRNA2_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
     dual_library$sgRNA2_WGE_ID[id_nontarget] <- dual_result$Gene2[id_nontarget]
   }
   
@@ -492,10 +492,30 @@ get_input_data.v1 <- function(
         dual_result$Gene2[id_match] <- multiple_ID$gene_all[idx]   
       }
     }
+    dual_result$Gene_pair <- paste(dual_result$Gene1, dual_result$Gene2, sep = "~")
   }
   
   dual_library <- dual_library %>% 
     dplyr::mutate(COMB_ID =  paste(sgRNA1_WGE_Sequence, sgRNA2_WGE_Sequence, sep = "_"))
+  
+  # merge common_pairs across libraries via mean
+  unique_fun <- function(x){
+    collap <- paste0(unique(x), collapse = ",")
+    collap[collap == "NA"] <- NA
+    return(collap)
+  }
+  
+  tmp_lib1 <- dual_library %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise_all(unique_fun)
+  
+  tmp_lib2 <- dual_library %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise(n_pairs = dplyr::n())
+  
+  dual_library <- dplyr::full_join(tmp_lib1, 
+                       tmp_lib2, 
+                       by = "SEQ_pair")
   
   # chr X -> 23, chr Y -> 24
   dual_library <- dual_library %>% 
@@ -513,9 +533,39 @@ get_input_data.v1 <- function(
     ) %>%
     dplyr::mutate(
       sgRNA1_Chr = as.numeric(sgRNA1_Chr), 
-      sgRNA2_Chr = as.numeric(sgRNA2_Chr)
+      sgRNA2_Chr = as.numeric(sgRNA2_Chr), 
+      sgRNA1_Start = as.numeric(sgRNA1_Start), 
+      sgRNA2_Start = as.numeric(sgRNA2_Start), 
+      sgRNA1_End = as.numeric(sgRNA1_End), 
+      sgRNA2_End = as.numeric(sgRNA2_End), 
     )
   
+  # if CL_name in columns dual_results, get only that
+  new_name <- sprintf("%s_logFC", CL_name)
+  dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
+    dplyr::rename(Note = Note1, 
+                  MyNote = Note2, 
+                  Gene_Pair = Gene_pair,
+                  !!new_name := CL_name)
+  
+  tmp_res1 <- dual_result_CL %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise_if(is.character, unique_fun)
+  
+  tmp_res2 <- dual_result_CL %>%
+    dplyr::group_by(SEQ_pair) %>%
+    dplyr::summarise(logFC =  mean(!!sym(sprintf("%s_logFC", CL_name))),  
+                     n_pairs = dplyr::n())
+  colnames(tmp_res2)[colnames(tmp_res2) == "logFC"] <- sprintf("%s_logFC", CL_name)
+  dual_result_CL <- dplyr::full_join(tmp_res1, 
+                       tmp_res2, 
+                       by = "SEQ_pair")
+  
+  if (!identical(dual_result_CL$ID_lib, dual_library$ID_lib)) {
+   stop("count and library rows SHOULD match, check what caused this...")
+  }
+  
+  # load CNA
   CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
                            show_col_types = FALSE) %>%
     dplyr::mutate(
@@ -535,13 +585,7 @@ get_input_data.v1 <- function(
     }
   }
   
-  # if CL_name in columns dual_results, get only that
-  new_name <- sprintf("%s_logFC", CL_name)
-  dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
-    dplyr::rename(Note = Note1, 
-                  MyNote = Note2, 
-                  Gene_Pair = Gene_pair,
-                  !!new_name := CL_name)
+  
   
   return(list(CNA = CNA, 
               result = dual_result_CL, 
@@ -995,10 +1039,18 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   # how to solve? (partially solved with hg38 matching)
  
   # Create matrix to match single x dual SEQ
+  # ALTERNATIVE WITH LIST, TODO: RM
+  # match_matrix_tmp <- list()
+  # for (id in 1:nrow(dual_library_seq)) {
+  #   match_matrix_tmp[[id]] <- match_dual_to_single(dual_library_seq[id,], single_library_seq)
+  # }
+  # match_matrix <- do.call(cbind, match_matrix_tmp)
+  # colnames(match_matrix) <- dual_library_seq$CHR_GENES_SEQ
+  
   match_matrix <- sapply(
-    seq_len(nrow(dual_library_seq)), function(id) 
-      match_dual_to_single(dual_library_seq[id,], single_library_seq)
-    )
+   seq_len(nrow(dual_library_seq)), function(id)
+     match_dual_to_single(dual_library_seq[id,], single_library_seq)
+   )
   colnames(match_matrix) <- dual_library_seq$CHR_GENES_SEQ
   
   if (any(rowSums(match_matrix) > 1)) {
@@ -1314,7 +1366,6 @@ ccr2.createPseudoSingle_combine <- function(
 #' @param outdir 
 #' @param EXPname 
 #' @param pseudo_single_FC 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -1324,7 +1375,6 @@ ccr2.modelSingleVSPseudoSingle <- function(
   pseudo_single_FC, 
   guide_id, 
   correctGW = NULL,
-  weighted_reg = TRUE,
   display = TRUE, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
@@ -1334,18 +1384,20 @@ ccr2.modelSingleVSPseudoSingle <- function(
   
   # remove NA in single screens
   matched_df <- pseudo_single_FC[!is.na(pseudo_single_FC$ID_single), ]
-  if (!weighted_reg) {
-    matched_df$n <- rep(1, nrow(matched_df))
-  }
-  fmla <- "avgFC ~ 0 + avgFC_single"
+  # matched_df$n_bin <- cut(
+  #  matched_df$n, 
+  #  breaks = c(0, 1, seq(10, round(max(matched_df$n), -1) + 10, 10))
+  #  )
+  # matched_df$n <- factor(matched_df$n,levels = sort(unique(matched_df$n)))
+  fmla <- "avgFC ~ 0 + avgFC_single + n"
   fit_model <- glm(formula = as.formula(fmla), 
                    data = matched_df,
-                   weights = matched_df$n, 
                    family = gaussian(link = "identity"))
   # remove outliers
-  cooksD <- cooks.distance(fit_model)
+  cooksD <- cooks.distance(fit_model) 
+  cooksD <- cooksD[!is.na(cooksD)]
   # remove extreme cases (quatile > 0.99)
-  thr_influential <- quantile(cooksD, prob = 0.99)
+  thr_influential <- quantile(cooksD, prob = 0.99, na.rm = T)
   influential <- cooksD[cooksD > thr_influential]
   # influential <- cooksD[(cooksD > (1.5 * mean(cooksD, na.rm = TRUE)))]
 
@@ -1357,7 +1409,6 @@ ccr2.modelSingleVSPseudoSingle <- function(
                                         matched_df_filt$sgRNA_ID)
     fit_model <- glm(formula = as.formula(fmla), 
                      data = matched_df_filt,
-                     weights = matched_df_filt$n, 
                      family = gaussian(link = "identity"))  
     rm_guides_cooks <- matched_df[names(influential), ]
     
@@ -1371,13 +1422,16 @@ ccr2.modelSingleVSPseudoSingle <- function(
                         avgFC_single = fit_model$model$avgFC_single,
                         fitted_avgFC = fit_model$fitted.values,
                         residuals_avgFC = residuals(fit_model),
-                        n_guides_in_mean = as.numeric(fit_model$weights))
+                        n_guides_in_mean = as.numeric(as.character(fit_model$model$n)))
+                        # n_guides_in_mean = as.numeric(fit_model$weights))
                         # lib = dual_collapsed_filt$lib)
   
   if (saveToFig) {
     display <- TRUE
     file_name_comp <- sprintf("%s%s_PseudoGuide%i_vs_single.%s", 
                               outdir, EXPname, guide_id, saveFormat)
+    file_name_comp_pred <- sprintf("%s%s_PseudoGuide%i_vs_FittedPseudoGuide%i.%s", 
+                              outdir, EXPname, guide_id, guide_id, saveFormat)
     file_name_resid <- sprintf("%s%s_PseudoGuide%i_vs_single_resid.%s", 
                                outdir, EXPname, guide_id, saveFormat)
     file_name_qqplot <- sprintf("%s%s_PseudoGuide%i_vs_single_qqplot.%s", 
@@ -1391,18 +1445,18 @@ ccr2.modelSingleVSPseudoSingle <- function(
     breaks_size <- round(seq(n_min, 
                              n_max, length.out = 6))
     text_corr <- data.frame(
-      label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC_single, df_plot$avgFC)), 
+      label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC, df_plot$fitted_avgFC)), 
       xpos = -Inf, 
       ypos = Inf)
     
-    pl_comp <- ggplot(df_plot, aes(x = avgFC_single, y = avgFC)) + 
-      geom_line(aes(y =  fitted_avgFC), colour = "red", linewidth = 1) + 
-      geom_abline(intercept = 0, slope = 1, 
-                  colour = "black", size = 1, linetype = "dashed") + 
-      geom_point(aes(y = avgFC, 
+    pl_comp_pred <- ggplot(df_plot, aes(x = avgFC, y =  fitted_avgFC)) + 
+      geom_point(aes(y = fitted_avgFC, 
                      # size = n_guides_in_mean, 
                      color = n_guides_in_mean), 
                  alpha = 0.5) +
+      # geom_line(aes(y =  fitted_avgFC), colour = "red", linewidth = 1) + 
+      geom_abline(intercept = 0, slope = 1, 
+                  colour = "black", size = 1, linetype = "dashed") + 
       #geom_smooth(formula = y ~ 0 + x, method = "loess", 
       #            span = 0.3, 
       #            method.args = list(degree = 2)) + 
@@ -1412,18 +1466,47 @@ ccr2.modelSingleVSPseudoSingle <- function(
             legend.position = "bottom", 
             plot.title = element_text(hjust = 0.5)) + 
       scale_colour_viridis_c(breaks = breaks_size) +
-      # scale_size_continuous(breaks = breaks_size) + 
       geom_text(data = text_corr, 
                 aes(label = label, x = xpos, y = ypos), size = 5, 
                 hjust = -0.1, vjust = 1.1, inherit.aes = F) +
-      ylab("Pseudo Single avgFC") + 
+      xlab("Pseudo Single avgFC") + 
+      ylab("Fitted Pseudo Single avgFC") + 
+      ggtitle(sprintf("Guide position %i", guide_id))
+    print(pl_comp_pred)
+    
+    text_corr <- data.frame(
+      label = sprintf("Pear. corr. = %.3f", cor(df_plot$avgFC, df_plot$avgFC_single)), 
+      xpos = -Inf, 
+      ypos = Inf)
+    
+    pl_comp <- ggplot(df_plot, aes(x = avgFC_single, y =  avgFC)) + 
+      geom_line(aes(y =  fitted_avgFC), colour = "red", linewidth = 1) + 
+      geom_point(aes(y =  avgFC, 
+                     # size = n_guides_in_mean, 
+                     color = n_guides_in_mean), 
+                     alpha = 0.5) +
+      geom_abline(intercept = 0, slope = 1, 
+                  colour = "black", size = 1, linetype = "dashed") + 
+      #geom_smooth(formula = y ~ 0 + x, method = "loess", 
+      #            span = 0.3, 
+      #            method.args = list(degree = 2)) + 
+      theme_bw() + 
+      theme(axis.title = element_text(size = 12), 
+            axis.text = element_text(size = 11), 
+            legend.position = "bottom", 
+            plot.title = element_text(hjust = 0.5)) + 
+      scale_colour_viridis_c(breaks = breaks_size) +
+      geom_text(data = text_corr, 
+                aes(label = label, x = xpos, y = ypos), size = 5, 
+                hjust = -0.1, vjust = 1.1, inherit.aes = F) +
       xlab("Single avgFC") + 
+      ylab("Pseudo Single avgFC") + 
       ggtitle(sprintf("Guide position %i", guide_id))
     print(pl_comp)
     
     # residuals VS fitted 
     df_plot$outliers <- ""
-    df_plot$outliers[abs(df_plot$residuals_avgFC) > 10] <- df_plot$id[abs(df_plot$residuals_avgFC) > 10]
+    df_plot$outliers[abs(df_plot$residuals_avgFC) > 2] <- df_plot$id[abs(df_plot$residuals_avgFC) > 2]
     pl_pred_vs_res <- ggplot(df_plot, aes(x = fitted_avgFC, 
                                           y = residuals_avgFC)) + 
       geom_text_repel(color = "black", aes(label = outliers), 
@@ -1472,6 +1555,7 @@ ccr2.modelSingleVSPseudoSingle <- function(
   
   if (saveToFig) {
     ggsave(filename = file_name_comp, plot = pl_comp, width = 4.5, height = 5.5)
+    ggsave(filename = file_name_comp_pred, plot = pl_comp_pred, width = 4.5, height = 5.5)
     ggsave(filename = file_name_resid, plot = pl_pred_vs_res, width = 6, height = 5)
     ggsave(filename = file_name_qqplot, plot = pl_qq, width = 5, height = 5)
   }
@@ -1501,9 +1585,16 @@ ccr2.injectData <- function(
   correctGW = NULL
 ) { 
   
+  # set n equal to the value for library combinations, rationale: class with the majority of common pairs!
+  #id_libcomb <- grepl("LibraryCombinations", pseudo_single_FC$info_subtype)
+  # n_fixed <- names(which.max(table(pseudo_single_FC$n[id_libcomb])))
+  n_fixed <- 1
+  print(paste0("Fixed n_guides_in_mean for library combinations: ", n_fixed))
+  
   ## predict on single guides (make a new function) ##
   single_FC <- single_FC %>% 
-    dplyr::rename(avgFC_single = avgFC, correction_single = correction)
+    dplyr::rename(avgFC_single = avgFC, correction_single = correction) %>%
+    dplyr::mutate(n = n_fixed)
   
   pseudo_single_GW <- predict(model_single_to_pseudo, newdata = single_FC)
   pseudo_single_GW <- single_FC[, 1:7] %>% 
@@ -2445,13 +2536,13 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC,
   
   dual_FC <- dual_FC[!is.na(dual_FC$correction),]
   
-  # name_var_y <- "avgFC_scaled" # use the actual values, not scaled
-  name_var_y <- "avgFC"
+  name_var_y <- "avgFC_scaled" # use the actual values, not scaled
+  #name_var_y <- "avgFC"
   name_var_x <- "bliss_zscore"
   title_pl <- "Uncorrected"
   if (corrected) {
-    # name_var_y <- "correctedFC_scaled" # use the actual values, not scaled
-    name_var_y <- "correctedFC"
+    name_var_y <- "correctedFC_scaled" # use the actual values, not scaled
+    # name_var_y <- "correctedFC"
     name_var_x <- "bliss_zscore_corrected"
     title_pl <- "Corrected"
   }
@@ -2497,7 +2588,6 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC,
 #' @param outdir 
 #' @param correctGW 
 #' @param ... 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2513,7 +2603,6 @@ ccr2.run <- function(
   display = TRUE, 
   saveFormat = NULL, 
   outdir = "./", 
-  weighted_reg = TRUE,
   correctGW, 
   ...
 ) {
@@ -2547,8 +2636,7 @@ ccr2.run <- function(
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   model_guide2 <- ccr2.modelSingleVSPseudoSingle(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
@@ -2558,8 +2646,7 @@ ccr2.run <- function(
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   models_performance <- data.frame(
     position = c("guide1", "guide2"), 
@@ -2673,7 +2760,6 @@ ccr2.run <- function(
 #' @param saveFormat 
 #' @param outdir 
 #' @param correctGW 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2689,7 +2775,6 @@ ccr2.run_nontarget <- function(
   display = TRUE, 
   saveFormat = NULL, 
   outdir = "./", 
-  weighted_reg = TRUE,
   correctGW
 ) {
   
@@ -2716,8 +2801,7 @@ ccr2.run_nontarget <- function(
     display = display,  
     saveFormat = saveFormat,
     outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   model_guide2 <- ccr2.modelSingleVSPseudoSingle(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
@@ -2726,8 +2810,7 @@ ccr2.run_nontarget <- function(
     display = display,  
     saveFormat = saveFormat,
     outdir = sprintf("%sNONTARGET_PAIR_", outdir), 
-    EXPname = EXPname, 
-    weighted_reg = weighted_reg)
+    EXPname = EXPname)
   
   models_performance <- data.frame(
     position = c("guide1", "guide2"), 
@@ -2846,7 +2929,6 @@ ccr2.run_nontarget <- function(
 #' @param CNA 
 #' @param CN_thr 
 #' @param ... 
-#' @param weighted_reg 
 #'
 #' @return
 #' @export
@@ -2868,8 +2950,7 @@ ccr2.run_complete <- function(
   correctGW, 
   excludeGene_plot = NULL, 
   CNA, 
-  CN_thr = 8, 
-  weighted_reg = TRUE,
+  CN_thr = 8,
   ...
 ) {
   if ((is.null(dual_count) & is.null(dual_logFC)) | 
@@ -2942,8 +3023,7 @@ ccr2.run_complete <- function(
     saveFormat = saveFormat,
     outdir = outdir, 
     EXPname = EXPname, 
-    correctGW = correctGW, 
-    weighted_reg = weighted_reg
+    correctGW = correctGW
   )
   dual_FC_nt_correctedFC <- tmp$dual_FC
   model_perf_nt <-  tmp$model_perf %>% 
@@ -2963,8 +3043,7 @@ ccr2.run_complete <- function(
     saveFormat = saveFormat,
     outdir = outdir, 
     EXPname = EXPname, 
-    correctGW = correctGW, 
-    weighted_reg = weighted_reg,
+    correctGW = correctGW,
     ...
   )
   
@@ -3134,22 +3213,21 @@ ccr2.run_complete <- function(
       Gene2_Chr = paste0(unique(sgRNA2_Chr), collapse = ","), 
       correction = median(correction),
       avgFC = median(avgFC),
-      # avgFC_scaled = median(avgFC_scaled), 
       bliss_zscore = median(bliss_zscore), 
       correctedFC = median(correctedFC),
-      # correctedFC_scaled = median(correctedFC_scaled), 
       bliss_zscore_corrected = median(bliss_zscore_corrected)) %>%
     dplyr::ungroup()
   
   # center on positive and negative classes
-  # dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC)
-  # dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC, 
-  #                                           corrected = TRUE)
+  dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC)
+  dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC, 
+                                                 corrected = TRUE)
   
   # plot bliss vs avgFC
   top_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
                                          corrected = TRUE, 
-                                         THR_FC = 0, THR_BLISS = 0,
+                                         THR_FC = -1, 
+                                         THR_BLISS = -0.5,
                                          EXPname = EXPname, 
                                          saveToFig = saveToFig, 
                                          saveFormat = saveFormat,
@@ -3157,7 +3235,8 @@ ccr2.run_complete <- function(
   
   top_gene_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC,
                                              corrected = TRUE, 
-                                             THR_FC = 0, THR_BLISS = 0,
+                                             THR_FC = -1, 
+                                             THR_BLISS = -0.5,
                                              EXPname = EXPname, 
                                              saveToFig = saveToFig, 
                                              saveFormat = saveFormat,
@@ -3165,14 +3244,16 @@ ccr2.run_complete <- function(
   
   top_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
                                            corrected = FALSE, 
-                                           THR_FC = 0, THR_BLISS = 0,
+                                           THR_FC = -1, 
+                                           THR_BLISS = -0.5,
                                            EXPname = EXPname, 
                                            saveToFig = saveToFig, 
                                            saveFormat = saveFormat,
                                            outdir = outdir)
   
   top_gene_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC, 
-                                              THR_FC = 0, THR_BLISS = 0,
+                                              THR_FC = -1, 
+                                              THR_BLISS = -0.5,
                                               corrected = FALSE, 
                                               EXPname = EXPname, 
                                               saveToFig = saveToFig, 

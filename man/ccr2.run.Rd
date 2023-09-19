@@ -14,7 +14,6 @@ ccr2.run(
   display = TRUE,
   saveFormat = NULL,
   outdir = "./",
-  weighted_reg = TRUE,
   correctGW,
   ...
 )
@@ -37,8 +36,6 @@ ccr2.run(
 \item{saveFormat}{}
 
 \item{outdir}{}
-
-\item{weighted_reg}{}
 
 \item{correctGW}{}
 

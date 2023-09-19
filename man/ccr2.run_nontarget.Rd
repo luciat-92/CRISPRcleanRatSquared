@@ -14,7 +14,6 @@ ccr2.run_nontarget(
   display = TRUE,
   saveFormat = NULL,
   outdir = "./",
-  weighted_reg = TRUE,
   correctGW
 )
 }
@@ -36,8 +35,6 @@ ccr2.run_nontarget(
 \item{saveFormat}{}
 
 \item{outdir}{}
-
-\item{weighted_reg}{}
 
 \item{correctGW}{}
 }

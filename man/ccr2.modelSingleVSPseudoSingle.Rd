@@ -8,7 +8,6 @@ ccr2.modelSingleVSPseudoSingle(
   pseudo_single_FC,
   guide_id,
   correctGW = NULL,
-  weighted_reg = TRUE,
   display = TRUE,
   saveToFig = FALSE,
   saveFormat = "pdf",
@@ -22,8 +21,6 @@ ccr2.modelSingleVSPseudoSingle(
 \item{guide_id}{}
 
 \item{correctGW}{}
-
-\item{weighted_reg}{}
 
 \item{display}{}
 
