@@ -6,6 +6,8 @@
 \usage{
 ccr2.solveLinearSys(
   dual_FC,
+  single_FC_corrected,
+  match_dual_single_seq,
   pseudo_single_p1_correctedFCs,
   pseudo_single_p2_correctedFCs,
   split_graph = TRUE,
@@ -18,6 +20,10 @@ ccr2.solveLinearSys(
 }
 \arguments{
 \item{dual_FC}{}
+
+\item{single_FC_corrected}{}
+
+\item{match_dual_single_seq}{}
 
 \item{pseudo_single_p1_correctedFCs}{}
 
