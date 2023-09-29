@@ -8,6 +8,7 @@
 #' @import readr
 #' @import tibble
 #' @import stringr
+#' @import CVXR
 #' @importFrom readxl read_xlsx
 #' @importFrom GenomicRanges findOverlaps 
 #' @importFrom GenomicRanges makeGRangesFromDataFrame
@@ -1348,10 +1349,9 @@ ccr2.createPseudoSingle_combine <- function(
       ggsave(filename = file_name, plot = pl, width = 6, height = 5)
     }
   }
-  
   return(list(sgRNA1 = guide1, sgRNA2 = guide2))
-  
 }
+
 
 #' Title
 #'
@@ -1786,6 +1786,8 @@ ccr2.filterGWclean <- function(
 #' @param pseudo_single_p1_correctedFCs 
 #' @param pseudo_single_p2_correctedFCs 
 #' @param split_graph 
+#' @param single_FC_corrected 
+#' @param match_dual_single_seq 
 #'
 #' @return
 #' @export
@@ -1793,6 +1795,8 @@ ccr2.filterGWclean <- function(
 #' @examples
 ccr2.solveLinearSys <- function(
   dual_FC, 
+  single_FC_corrected, 
+  match_dual_single_seq, 
   pseudo_single_p1_correctedFCs, 
   pseudo_single_p2_correctedFCs, 
   split_graph = TRUE,
@@ -1802,6 +1806,15 @@ ccr2.solveLinearSys <- function(
   outdir = "./", 
   EXPname = ""
 ) {
+  
+  # get maximum of correction from single screens
+  unique_ID <- unique(c(dual_FC$sgRNA1_WGE_ID, 
+                        dual_FC$sgRNA2_WGE_ID))
+  id_keep <-  match_dual_single_seq$ID_single[match_dual_single_seq$ID %in% unique_ID]
+  id_keep <- id_keep[!is.na(id_keep)]
+  single_FC_corrected_filt <- single_FC_corrected[unique(id_keep), ]
+  single_FC_corrected_filt <- single_FC_corrected_filt[!is.na(single_FC_corrected_filt$CHR), ]
+  max_corr <- max(max(single_FC_corrected_filt$correction)*2, 1) # linear relationship
   
   # 1. create matrix of interactions 
   dual_FC <- dual_FC %>% 
@@ -1841,8 +1854,9 @@ ccr2.solveLinearSys <- function(
       combinations = combinations[id_large_row, id_large_col], 
       dual_FC = dual_FC, 
       pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_large_row, ], 
-      pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_large_col, ]
-      )
+      pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_large_col, ], 
+      max_corr = max_corr
+    )
     
     # solve small system:
     print(paste("Remaining sgRNA n =", length(sub_nodes_small)))
@@ -1853,13 +1867,16 @@ ccr2.solveLinearSys <- function(
         combinations = combinations[id_small_row, id_small_col], 
         dual_FC = dual_FC, 
         pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_small_row, ], 
-        pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_small_col, ]
+        pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_small_col, ], 
+        max_corr = max_corr
     )
     
-    res_all <- list(df_corr = rbind(res_large$df_corr, res_small$df_corr), 
-                      pseudo_single_correction = rbind(
-                        res_large$pseudo_single_correction, 
-                        res_small$pseudo_single_correction)
+    res_all <- list(
+      sys_solution = list(large = res_large$sys_solution, 
+                          small = res_small$sys_solution),
+      df_corr = rbind(res_large$df_corr, res_small$df_corr), 
+      pseudo_single_correction = rbind(res_large$pseudo_single_correction, 
+                                       res_small$pseudo_single_correction)
     )
     
   }else{
@@ -1871,11 +1888,13 @@ ccr2.solveLinearSys <- function(
       combinations = combinations, 
       dual_FC = dual_FC, 
       pseudo_single_p1 = pseudo_single_p1_correctedFCs, 
-      pseudo_single_p2 = pseudo_single_p2_correctedFCs 
+      pseudo_single_p2 = pseudo_single_p2_correctedFCs, 
+      max_corr = max_corr
     )
     
   }
   
+  sys_solution <- res_all$sys_solution
   df_corr <- res_all$df_corr
   pseudo_single_correction <- res_all$pseudo_single_correction
   dual_FC_correctedFC <- dplyr::left_join(dual_FC, df_corr, by = "sgRNA_ID_pair") %>%
@@ -1942,10 +1961,11 @@ ccr2.solveLinearSys <- function(
   }
   
   return(list(
+    max_correction = max_corr, 
     dual_FC = dual_FC_correctedFC, 
     pseudo_single = pseudo_single_correction, 
-    matrix_interactions = matrix_interactions))
-  
+    matrix_interactions = matrix_interactions, 
+    sys_solution = sys_solution))
 }
 
 #' Title
@@ -2536,13 +2556,13 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC,
   
   dual_FC <- dual_FC[!is.na(dual_FC$correction),]
   
-  name_var_y <- "avgFC_scaled" # use the actual values, not scaled
-  #name_var_y <- "avgFC"
+  name_var_y <- "avgFC_scaled" 
+  # name_var_y <- "avgFC" # use the actual values, not scaled
   name_var_x <- "bliss_zscore"
   title_pl <- "Uncorrected"
   if (corrected) {
-    name_var_y <- "correctedFC_scaled" # use the actual values, not scaled
-    # name_var_y <- "correctedFC"
+    name_var_y <- "correctedFC_scaled" 
+    # name_var_y <- "correctedFC" # use the actual values, not scaled
     name_var_x <- "bliss_zscore_corrected"
     title_pl <- "Corrected"
   }
@@ -2656,6 +2676,15 @@ ccr2.run <- function(
     R2 = c(with(model_guide1$model_summary, 1 - deviance/null.deviance),
            with(model_guide2$model_summary, 1 - deviance/null.deviance)))
   
+  models_estimates <- rbind(as.data.frame(coef(summary(model_guide1$model))) %>% 
+                        dplyr::mutate(position = "guide1") %>%
+                        dplyr::mutate(feature = rownames(coef(summary(model_guide1$model))), 
+                                      .before = "Estimate"), 
+                      as.data.frame(coef(summary(model_guide2$model))) %>% 
+                        dplyr::mutate(position = "guide2") %>%
+                        dplyr::mutate(feature = rownames(coef(summary(model_guide2$model))), 
+                                      .before = "Estimate"))
+  
   ### inject data ###
   dataInjection_guide1 <- ccr2.injectData(
     model_single_to_pseudo = model_guide1$model, 
@@ -2724,6 +2753,8 @@ ccr2.run <- function(
   ##################################################
   ### solve linear system to get pair correction ###
   sys_solution <- ccr2.solveLinearSys(
+    single_FC_corrected = single_correctedFCs,
+    match_dual_single_seq = match_dual_single_seq,
     dual_FC = dual_FC, 
     pseudo_single_p1_correctedFCs = pseudo_single_p1_correctedFCs$pseudo_single_FC, 
     pseudo_single_p2_correctedFCs = pseudo_single_p2_correctedFCs$pseudo_single_FC, 
@@ -2737,9 +2768,12 @@ ccr2.run <- function(
   
   pseudo_single_correction <- sys_solution$pseudo_single
   dual_FC_correctedFC <- sys_solution$dual_FC
+  max_correction <- sys_solution$max_correction
   
   return(
-    list(model_perf = models_performance,
+    list(max_correction = max_correction, 
+         model_perf = models_performance,
+         model_est = models_estimates,
          pseudo_single_segments = pseudo_single_segments,
          pseudo_single = pseudo_single_correction, 
          dual_FC = dual_FC_correctedFC)
@@ -2819,6 +2853,15 @@ ccr2.run_nontarget <- function(
             cor(model_guide2$model$fitted.value, model_guide2$model$model$avgFC)), 
     R2 = c(with(model_guide1$model_summary, 1 - deviance/null.deviance),
            with(model_guide2$model_summary, 1 - deviance/null.deviance)))
+  
+  models_estimates <- rbind(as.data.frame(coef(summary(model_guide1$model))) %>% 
+                        dplyr::mutate(position = "guide1") %>%
+                        dplyr::mutate(feature = rownames(coef(summary(model_guide1$model))), 
+                                      .before = "Estimate"), 
+                      as.data.frame(coef(summary(model_guide2$model))) %>% 
+                        dplyr::mutate(position = "guide2") %>%
+                        dplyr::mutate(feature = rownames(coef(summary(model_guide2$model))), 
+                                      .before = "Estimate"))
   
   ### inject data ###
   dataInjection_guide1 <- ccr2.injectData(
@@ -2904,6 +2947,7 @@ ccr2.run_nontarget <- function(
   }
  
   return(list(model_perf = models_performance,
+              model_est = models_estimates,
               pseudo_single_segments = pseudo_single_segments,
               dual_FC = dual_FC_correctedFC))
   
@@ -3028,6 +3072,9 @@ ccr2.run_complete <- function(
   dual_FC_nt_correctedFC <- tmp$dual_FC
   model_perf_nt <-  tmp$model_perf %>% 
     mutate(type = "NONTARGET_PAIR")
+  model_est_nt <-  tmp$model_est %>% 
+    mutate(type = "NONTARGET_PAIR")
+  
   pseudo_single_segments_nt <- tmp$pseudo_single_segments %>% 
     mutate(type = "NONTARGET_PAIR")
   
@@ -3049,10 +3096,14 @@ ccr2.run_complete <- function(
   
   dual_FC_correctedFC <- tmp$dual_FC
   pseudo_single_correction <- tmp$pseudo_single
+  max_correction <- tmp$max_correction
   
   model_perf <-  tmp$model_perf %>% 
     mutate(type = "DOUBLE_CUT_PAIR") %>% 
     bind_rows(model_perf_nt)
+  model_est <-  tmp$model_est %>% 
+    mutate(type = "DOUBLE_CUT_PAIR") %>% 
+    bind_rows(model_est_nt)
   
   pseudo_single_segments <- tmp$pseudo_single_segments %>% 
     mutate(type = "DOUBLE_CUT_PAIR") %>% 
@@ -3267,10 +3318,12 @@ ccr2.run_complete <- function(
               pseudo_single_segments = pseudo_single_segments,
               system_solition = pseudo_single_correction,
               model_perf = model_perf,
+              model_est = model_est,
               top_corrected = top_corrected, 
               top_gene_corrected = top_gene_corrected, 
               top_uncorrected = top_uncorrected, 
-              top_gene_uncorrected = top_gene_uncorrected))
+              top_gene_uncorrected = top_gene_uncorrected, 
+              max_correction = max_correction))
   
 }
 
@@ -3281,6 +3334,7 @@ ccr2.run_complete <- function(
 #' @param dual_FC 
 #' @param pseudo_single_p1 
 #' @param pseudo_single_p2 
+#' @param max_corr 
 #'
 #' @return
 #'
@@ -3289,7 +3343,8 @@ get_pairwise_correction <- function(matrix_interactions,
                                     combinations, 
                                     dual_FC, 
                                     pseudo_single_p1, 
-                                    pseudo_single_p2){
+                                    pseudo_single_p2, 
+                                    max_corr){
   
   # 2. create matrix of system
   # n.eq=nrow(int)+ncol(int) times n.unknowns=nrow(int)*ncol(int)
@@ -3336,12 +3391,76 @@ get_pairwise_correction <- function(matrix_interactions,
   correction_vect <- c(pseudo_single_p1$correction_scaled, 
                        pseudo_single_p2$correction_scaled)
   
-  # 4. solve system 
-  time_solve <- system.time(correction_pair <- solve_system_fun(
-    matrix_sys = matrix_sys, 
-    b_coeff = correction_vect)
-  )
-  print(sprintf("system solved after: %.2fs", time_solve[3]))
+  
+  # 4. solve system, (constrained)
+  x <- CVXR::Variable(ncol(matrix_sys))
+  objective <- CVXR::Minimize(sum((matrix_sys %*% x - correction_vect)^2))
+  problem <- CVXR::Problem(objective, constraints = list(x >= 0, x <= max_corr))
+  sys_solution <- CVXR::solve(problem)
+  correction_pair <- sys_solution$getValue(x)[,1]
+  print(paste("Solution status is", sys_solution$status))
+  print(paste("The solver used is", sys_solution$solver))
+  print(paste("Problem solved in", sys_solution$solve_time, "sec"))
+  
+  # # try with glmnet
+  # time_solve <- system.time(sys_solution <- glmnet(
+  #   x = matrix_sys, 
+  #   y = correction_vect, 
+  #   # lower.limits = 0, 
+  #   # upper.limits = 2,
+  #   alpha = 1, lambda = 0, # no penalization
+  #   intercept = FALSE, 
+  #   standardize = FALSE)
+  # )
+  # print(sprintf("system solved after: %.2fs", time_solve[3]))
+  # correction_pair <- as.vector(sys_solution$beta[,1])
+  
+  # # try vith bvls
+  # time_solve <- system.time(sys_solution <- bvls::bvls(
+  #            as.matrix(matrix_sys), 
+  #            correction_vect, 
+  #            bl = rep(0, ncol(matrix_sys)), # how to set up bounds?
+  #            bu = rep(1, ncol(matrix_sys)))
+  # )
+  #print(sprintf("system solved after: %.2fs", time_solve[3]))
+  #correction_pair <- sys_solution$x
+  
+  # # try with nnls
+  # a <- Matrix::crossprod(matrix_sys)
+  # b <- Matrix::crossprod(matrix_sys, correction_vect)
+  # print("matrix computed")
+  # time_solve <- system.time(sys_solution <- RcppML::nnls(
+  #   fast_nnls = TRUE,
+  #   a = as.matrix(a), 
+  #   b = as.matrix(b))
+  # )
+  # print(sprintf("system solved after: %.2fs", time_solve[3]))
+  # correction_pair <- sys_solution
+  
+  # try with lsei
+  # time_solve <- system.time(sys_solution <- limSolve::lsei(
+  #   A = matrix_sys, 
+  #   B = correction_vect, 
+  #   G = diag(x = 1, nrow = ncol(matrix_sys), ncol = ncol(matrix_sys)), 
+  #   H = rep(0, ncol(matrix_sys)))
+  # )
+  # print(sprintf("system solved after: %.2fs", time_solve[3]))
+  # correction_pair <- sys_solution$X
+  
+  # # try with nnls
+  # time_solve <- system.time(sys_solution <- nnls::nnls(
+  #   matrix_sys, correction_vect
+  #   )
+  # )
+  # print(sprintf("system solved after: %.2fs", time_solve[3]))
+  # correction_pair <- sys_solution$x
+  
+  # use moore-penrose approximation
+  # time_solve <- system.time(correction_pair <- solve_system_fun(
+  #   matrix_sys = matrix_sys,
+  #   b_coeff = correction_vect)
+  # )
+  # sys_solution <- NULL
   
   # save output
   df_corr <- data.frame(sgRNA_ID_pair = colnames(matrix_sys), 
@@ -3373,6 +3492,7 @@ get_pairwise_correction <- function(matrix_interactions,
   
   return(
     list(
+      sys_solution = sys_solution,
       df_corr = df_corr, 
       pseudo_single_correction = pseudo_single_correction
     )
@@ -3412,6 +3532,6 @@ solve_system_fun <- function(matrix_sys, b_coeff){
   
   tmp <- 1/D * as.vector(t(U) %*% b_coeff) # faster than element-wise multiplication 
   solution_sys <- V %*% tmp
-  
+
   return(solution_sys)
 }
