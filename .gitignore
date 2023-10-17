@@ -4,4 +4,6 @@
 .Ruserdata
 input*.tsv
 test*.R
+inst/data/*
+inst/exemples/*
 .DS_Store
