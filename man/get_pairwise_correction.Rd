@@ -10,7 +10,8 @@ get_pairwise_correction(
   dual_FC,
   pseudo_single_p1,
   pseudo_single_p2,
-  max_corr
+  max_corr,
+  min_corr
 )
 }
 \arguments{
@@ -24,7 +25,7 @@ get_pairwise_correction(
 
 \item{pseudo_single_p2}{}
 
-\item{max_corr}{}
+\item{min_corr}{}
 }
 \value{
 

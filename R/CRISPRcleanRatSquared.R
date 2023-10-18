@@ -1815,6 +1815,7 @@ ccr2.solveLinearSys <- function(
   single_FC_corrected_filt <- single_FC_corrected[unique(id_keep), ]
   single_FC_corrected_filt <- single_FC_corrected_filt[!is.na(single_FC_corrected_filt$CHR), ]
   max_corr <- max(max(single_FC_corrected_filt$correction)*2, 1) # linear relationship
+  min_corr <- min(min(single_FC_corrected_filt$correction), 0) # single boundary
   
   # 1. create matrix of interactions 
   dual_FC <- dual_FC %>% 
@@ -1855,7 +1856,8 @@ ccr2.solveLinearSys <- function(
       dual_FC = dual_FC, 
       pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_large_row, ], 
       pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_large_col, ], 
-      max_corr = max_corr
+      max_corr = max_corr, 
+      min_corr = min_corr
     )
     
     # solve small system:
@@ -1868,7 +1870,8 @@ ccr2.solveLinearSys <- function(
         dual_FC = dual_FC, 
         pseudo_single_p1 = pseudo_single_p1_correctedFCs[id_small_row, ], 
         pseudo_single_p2 = pseudo_single_p2_correctedFCs[id_small_col, ], 
-        max_corr = max_corr
+        max_corr = max_corr, 
+        min_corr = min_corr
     )
     
     res_all <- list(
@@ -1889,7 +1892,8 @@ ccr2.solveLinearSys <- function(
       dual_FC = dual_FC, 
       pseudo_single_p1 = pseudo_single_p1_correctedFCs, 
       pseudo_single_p2 = pseudo_single_p2_correctedFCs, 
-      max_corr = max_corr
+      max_corr = max_corr, 
+      min_corr = min_corr
     )
     
   }
@@ -1962,6 +1966,7 @@ ccr2.solveLinearSys <- function(
   
   return(list(
     max_correction = max_corr, 
+    min_correction = min_corr,
     dual_FC = dual_FC_correctedFC, 
     pseudo_single = pseudo_single_correction, 
     matrix_interactions = matrix_interactions, 
@@ -2769,9 +2774,11 @@ ccr2.run <- function(
   pseudo_single_correction <- sys_solution$pseudo_single
   dual_FC_correctedFC <- sys_solution$dual_FC
   max_correction <- sys_solution$max_correction
+  min_correction <- sys_solution$min_correction
   
   return(
     list(max_correction = max_correction, 
+         min_correction = min_correction, 
          model_perf = models_performance,
          model_est = models_estimates,
          pseudo_single_segments = pseudo_single_segments,
@@ -3097,6 +3104,7 @@ ccr2.run_complete <- function(
   dual_FC_correctedFC <- tmp$dual_FC
   pseudo_single_correction <- tmp$pseudo_single
   max_correction <- tmp$max_correction
+  min_correction <- tmp$min_correction
   
   model_perf <-  tmp$model_perf %>% 
     mutate(type = "DOUBLE_CUT_PAIR") %>% 
@@ -3323,7 +3331,8 @@ ccr2.run_complete <- function(
               top_gene_corrected = top_gene_corrected, 
               top_uncorrected = top_uncorrected, 
               top_gene_uncorrected = top_gene_uncorrected, 
-              max_correction = max_correction))
+              max_correction = max_correction, 
+              min_correction = min_correction))
   
 }
 
@@ -3334,7 +3343,8 @@ ccr2.run_complete <- function(
 #' @param dual_FC 
 #' @param pseudo_single_p1 
 #' @param pseudo_single_p2 
-#' @param max_corr 
+#' @param max_corr
+#' @param min_corr 
 #'
 #' @return
 #'
@@ -3344,7 +3354,8 @@ get_pairwise_correction <- function(matrix_interactions,
                                     dual_FC, 
                                     pseudo_single_p1, 
                                     pseudo_single_p2, 
-                                    max_corr){
+                                    max_corr, 
+                                    min_corr){
   
   # 2. create matrix of system
   # n.eq=nrow(int)+ncol(int) times n.unknowns=nrow(int)*ncol(int)
@@ -3395,7 +3406,7 @@ get_pairwise_correction <- function(matrix_interactions,
   # 4. solve system, (constrained)
   x <- CVXR::Variable(ncol(matrix_sys))
   objective <- CVXR::Minimize(sum((matrix_sys %*% x - correction_vect)^2))
-  problem <- CVXR::Problem(objective, constraints = list(x >= 0, x <= max_corr))
+  problem <- CVXR::Problem(objective, constraints = list(x >= min_corr, x <= max_corr))
   sys_solution <- CVXR::solve(problem)
   correction_pair <- sys_solution$getValue(x)[,1]
   print(paste("Solution status is", sys_solution$status))
