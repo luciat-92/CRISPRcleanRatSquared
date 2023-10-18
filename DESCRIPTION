@@ -14,7 +14,6 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
 Depends: R (>= 4.1.0)
 Imports: Matrix,
-  CRISPRcleanR, 
   ggplot2,
   ggrepel, 
   stringr,
@@ -28,4 +27,5 @@ Imports: Matrix,
   igraph, 
   tibble, 
   CVXR
+Remotes: francescojm/CRISPRcleanR
 Suggests: lintr
