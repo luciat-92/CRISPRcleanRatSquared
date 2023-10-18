@@ -1,6 +1,6 @@
 # CRISPRcleanR^2
 
-v0.5.0: Correct combinatorial screens:
+v0.5.1: Correct combinatorial screens:
 It can handle both logFC and count as input. Two functions to load input: multiple batches split or one unique file with batches combined.
 If multiple batches are available, guide pairs in common are merged taking the average.
 All guides (apart from non-target VS non-target) are corrected
@@ -22,3 +22,5 @@ Update v0.4.0: Adapt to work with logFC (merged across batches) as input
 Update v0.4.1: Take avg of common guide pairs across batches, change the function for passing pseudo single vs single
 
 Update v0.5.0: Approximate linear system via CVXR package (box constraints on solution based on 2*maximum correction in single CL)
+
+Update v0.5.1: add also minimum correction constraints as minimum correction in single CL 
