@@ -27,5 +27,5 @@ Imports: Matrix,
   igraph, 
   tibble, 
   CVXR
-Remotes: https://github.com/francescojm/CRISPRcleanR
+Remotes: git::https://github.com/francescojm/CRISPRcleanR
 Suggests: lintr
