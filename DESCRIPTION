@@ -18,7 +18,7 @@ Imports: CRISPRcleanR,
   Matrix,
   ggplot2,
   ggrepel, 
-  stringr,
+  stringr (>= 1.5.0),
   magrittr,
   dplyr,
   readr,
@@ -28,5 +28,6 @@ Imports: CRISPRcleanR,
   ggpubr, 
   igraph, 
   tibble, 
-  CVXR
+  CVXR,
+  S4Vectors
 Suggests: lintr

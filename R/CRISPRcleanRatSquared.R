@@ -9,6 +9,7 @@
 #' @import tibble
 #' @import stringr
 #' @import CVXR
+#' @import S4Vectors
 #' @importFrom readxl read_xlsx
 #' @importFrom GenomicRanges findOverlaps 
 #' @importFrom GenomicRanges makeGRangesFromDataFrame
