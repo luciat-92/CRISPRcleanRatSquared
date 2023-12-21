@@ -572,7 +572,7 @@ get_input_data.v1 <- function(
   }
   
   # load CNA
-  CNA <- readr::read_table(sprintf('%s%s', input_fold,  copy_number_file), 
+  CNA <- readr::read_table(sprintf('%s', copy_number_file), 
                            show_col_types = FALSE) %>%
     dplyr::mutate(
       CHROM = dplyr::case_when(
