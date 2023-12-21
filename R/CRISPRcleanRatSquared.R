@@ -547,8 +547,12 @@ get_input_data.v1 <- function(
   dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
     dplyr::rename(Note = Note1, 
                   MyNote = Note2, 
-                  Gene_Pair = Gene_pair,
                   !!new_name := CL_name)
+  
+  if ("Gene_pair" %in% colnames(dual_result_CL)) {
+    dual_result_CL <- dual_result_CL 
+      dplyr::rename(Gene_Pair = Gene_pair)
+  }
   
   tmp_res1 <- dual_result_CL %>%
     dplyr::group_by(SEQ_pair) %>%
