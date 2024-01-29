@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.plotClasses}
 \alias{ccr2.plotClasses}
-\title{Title}
+\title{Plot logFC distributions for before and after CRISPRcleanR^2 correction, separating per dual guides classes}
 \usage{
 ccr2.plotClasses(
   dual_FC_correctedFC,
@@ -13,19 +13,17 @@ ccr2.plotClasses(
 )
 }
 \arguments{
-\item{dual_FC_correctedFC}{}
+\item{dual_FC_correctedFC}{Data frame containing information about corrected logFC values for dual KO.}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, indicating whether to save the generated plot to a file. Default is FALSE.}
 
-\item{saveFormat}{}
+\item{saveFormat}{File format for saving the plot (e.g., ".pdf", ".png"). Default is ".pdf".}
 
-\item{outdir}{}
+\item{outdir}{Directory to save the plot. Default is "./".}
 
-\item{EXPname}{}
-}
-\value{
-
+\item{EXPname}{Experiment name to include in the plot filename.}
 }
 \description{
-plot: distribution before and after based on classes
+This function generates boxplots and density plots for the distribution of logFC values (before and after CRISPRcleanR^2 correction),
+comparing dual guides classes.
 }

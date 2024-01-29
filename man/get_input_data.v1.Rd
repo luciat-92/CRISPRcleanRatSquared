@@ -7,16 +7,42 @@
 get_input_data.v1(param_file = NULL, param_list = NULL)
 }
 \arguments{
-\item{param_file}{}
+\item{param_file}{.tsv file, the first column indicates the type of data, the
+second the file location.}
 
-\item{param_list}{}
+\item{param_list}{list with input files' location to be passed. The names in the list must include result_file, library_file and copy_number_file}
 }
 \value{
-
+a list
+\itemize{
+\item CNA: copy number, one row per gene
+\item result: data.frame of dual KO logFC for the CL_name considered, one row per guides combination (unique identifier based on SEQ_pair)
+\item library: data.frame of metadata for dual KO library
+\item CL_name: cell line name
+\item out_fold: location to store results
+}
 }
 \description{
 get_input_data.v1() load files as indicated in param_file or param_list.
-Must include result_file, library_file and copy_number_file.
-Only one file per type is passed (suitable for different batches combined)
+Must include result_file, library_file and copy_number_file (tab separated).
+Only one file per type is passed (suitable for different batches previously combined in a unique file)
+The result_file must have the first 13 column with the following structure:
+\itemize{
+\item ID: guide pair ID string inside the batch (if any)
+\item lib: batch ID string
+\item ID_lib: combination from the columns ID and lib separated by an underscore
+\item Note1: class for guide pairs (e.g. PositiveControls, AnchorSingletons, etc)
+\item Note2: additional class for guide pairs (could be more granular like ESSENTIAL-NONTARGET)
+\item Gene_pair: HGNC symbol of the genes pair targeted by guide in position 1 and position 2 (separated by ~)
+\item Gene1: HGNC symbol of the gene targeted by guide in position 1
+\item Gene2: HGNC symbol of the gene targeted by guide in position 2
+\item sgRNA1_WGE_ID: sgRNA ID for guide in position 1
+\item sgRNA1_WGE_Sequence: sgRNA sequence for guide in position 1
+\item sgRNA2_WGE_ID: sgRNA ID for guide in position 2
+\item sgRNA2_WGE_Sequence: sgRNA sequence for guide in position 2
+\item SEQ_pair: sgRNA sequence for guide in position 1 and 2 separated by ~
+The remaining columns include log fold changes per cell line (<CL_name>_logFC)
+\emph{IMPORTANT}: the dual guides with the same SEQ_pair across batches (lib) will be merged taking the mean.
 Additional used inputs are input_fold and out_fold (default = "./") and CL_name (default = "./")
+}
 }

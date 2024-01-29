@@ -2,18 +2,22 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.get_summary_singletons}
 \alias{ccr2.get_summary_singletons}
-\title{Title}
+\title{Get summary statistics for singletons}
 \usage{
-ccr2.get_summary_singletons(dual_FC, corrected = F)
+ccr2.get_summary_singletons(dual_FC, corrected = FALSE)
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{Data frame containing dual-KO fold changes.}
 
-\item{corrected}{}
+\item{corrected}{Logical, indicating whether to use ccr2 corrected fold changes (default is FALSE).}
 }
 \value{
-
+A list containing two data frames with summary statistics for singletons at Position 1 and Position 2.
+Each data frame includes columns such as target gene, target gene ID, median fold change, interquartile range, mean fold change,
+standard deviation, sample size, related singletons' genes, related singletons' gene IDs, and additional information.
 }
 \description{
-Title
+This function calculates summary statistics for singletons in a dual KO screen.
+It provides information such as median, mean, standard deviation, and interquartile range for the fold changes
+of singletons at both positions (Position 1 and Position 2).
 }

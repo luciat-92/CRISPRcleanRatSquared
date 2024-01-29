@@ -2,18 +2,24 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.compute_bliss}
 \alias{ccr2.compute_bliss}
-\title{Title}
+\title{Compute Bliss z-score for the dual KO}
 \usage{
 ccr2.compute_bliss(dual_FC, corrected = FALSE)
 }
 \arguments{
-\item{dual_FC}{}
+\item{corrected}{Logical, indicating whether to use CRISPRcleanR^2 corrected fold changes (default is FALSE).}
 
-\item{corrected}{}
+\item{dual_KO}{Data frame containing dual KO fold changes.}
 }
 \value{
-
+A data frame with Bliss z-score computed for each guide pair in the dual KO screen.
+If \code{corrected} is TRUE, the resulting data frame includes columns named \code{expected_pairFC_corrected} and \code{bliss_zscore_corrected};
+otherwise, it includes \code{expected_pairFC} and \code{bliss_zscore}.
 }
 \description{
-Title
+This function computes Bliss z-score for the dual KO screen, considering the expected fold changes
+based on the medians of singletons associated with each guide pair.
+}
+\examples{
+
 }

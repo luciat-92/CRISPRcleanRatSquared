@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.solveLinearSys}
 \alias{ccr2.solveLinearSys}
-\title{Title}
+\title{Approximate the solutions of linear system to retrieve dual KO CRISPRcleanR^2 correction}
 \usage{
 ccr2.solveLinearSys(
   dual_FC,
@@ -19,31 +19,45 @@ ccr2.solveLinearSys(
 )
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column).}
 
-\item{single_FC_corrected}{}
+\item{single_FC_corrected}{Data frame containing CRISPRcleanR corrected logFCs for single KO.}
 
-\item{match_dual_single_seq}{}
+\item{match_dual_single_seq}{Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).}
 
-\item{pseudo_single_p1_correctedFCs}{}
+\item{pseudo_single_p1_correctedFCs}{Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides in position 1 (output of ccr2.filterGWclean).}
 
-\item{pseudo_single_p2_correctedFCs}{}
+\item{pseudo_single_p2_correctedFCs}{Data frame containing cCRISPRcleanR corrected logFCs for pseudo-single guides in position 2 (output of ccr2.filterGWclean).}
 
-\item{split_graph}{}
+\item{split_graph}{Logical, indicating whether to split the graph representing the coefficient matrix of the system into largest connected component plus everything else. It depends on the position 1 VS position 2 pairs configurations. When possible, split reduces the computational complexity. Default is TRUE.}
 
-\item{display}{}
+\item{display}{Logical, indicating whether to display the plots. Default is TRUE.}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, indicating whether to save the generated plots to files. Default is FALSE.}
 
-\item{saveFormat}{}
+\item{saveFormat}{File format for saving the plots (e.g., ".pdf", ".png"). Default is ".pdf".}
 
-\item{outdir}{}
+\item{outdir}{Directory to save the plots. Default is "./".}
 
-\item{EXPname}{}
+\item{EXPname}{Experiment name to include in the plot filenames.}
 }
 \value{
-
+A list containing
+\itemize{
+\item max_correction: maximum dual correction allowed based on single KO correction (used as upper bound for the solution).
+\item min_correction: minimum dual correction allowed based on single KO correction (used as upper bound for the solution).
+\item dual_FC: Data frame of dual KO including CRISPRcleanR^2 correction.
+\item pseudo_single: Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides (both positions), it also includes the fitted pseudo-single correction obtained as system solution.
+\item matrix_interactions: matrix with logical entries, rows = sgRNAs in position 1 and cols =  sgRNAs in position 2. Each entry indicates if the pair sgRNA pos1 ~ sgRNA pos 2 exists in the given dual KO dataset.
+\item sys_solution: system solution by the chosen solver (OSQP solver from CVXR, output of \code{\link{get_pairwise_correction}})
+}
 }
 \description{
-Title
+This function solves a linear system (approximated solution, underdetermined system plus box constraints) to identify dual KO CRISPRcleanR^2 correction,
+taking into account pseudo-single correction and how pseudo-single guides are built from dual KO guides.
+It provides information about the dual KO corrected logFCs as well as the correction values for pseudo-single logFCs.
+The function also plots the actual pseudo-single correction versus the approximated solution, original VS corrected dual logFCs and psuedo-single correction (position1 and position2) compared to retrieved dual correction.
+}
+\seealso{
+\code{\link{get_pairwise_correction}}
 }

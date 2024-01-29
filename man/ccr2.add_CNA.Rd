@@ -2,18 +2,27 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.add_CNA}
 \alias{ccr2.add_CNA}
-\title{Title}
+\title{Add Copy Number Alteration (CNA) information to dual KO data.}
 \usage{
 ccr2.add_CNA(CNA, dual_FC)
 }
 \arguments{
-\item{CNA}{}
+\item{CNA}{A data frame containing copy number alteration information. It must include the following columns:
+\itemize{
+\item CHROM: chromosome id in "chri" format
+\item start: start of the CN region, genomic location in base pair
+\item end: end of the CN region, genomic location in base pair
+\item C: copy number (absolute) value
+}}
 
-\item{dual_FC}{}
+\item{dual_FC}{A data frame containing dual KO data.}
 }
 \value{
-
+A data frame similar to dual_FC with added CNA information. The dual guides with no CNA info in at least one position are removed.
 }
 \description{
-combine copy number info with dual FC data.frame
+This function takes a data frame containing dual KO information and a data frame with copy number alteration (CNA) information.
+It adds CNA information to the dual KO data based on genomic positions.
+It gives info on CN for gene in position 1 and position 2,
+as well as the sum, maximum and product of the CN of genes in position 1 and 2.
 }

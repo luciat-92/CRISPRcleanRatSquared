@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.plot_correction}
 \alias{ccr2.plot_correction}
-\title{Title}
+\title{Plot Bliss synergy z-scores before and after CRISPRcleanR^2 correction.}
 \usage{
 ccr2.plot_correction(
   df,
@@ -13,19 +13,21 @@ ccr2.plot_correction(
 )
 }
 \arguments{
-\item{df}{}
+\item{df}{A data frame containing Bliss z-scores before and after correction (output of ccr2.compute_bliss).
+It should have columns 'bliss_zscore', 'bliss_zscore_corrected', and 'info'.}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, indicating whether to save the plot to a file (default is FALSE)}
 
-\item{saveFormat}{}
+\item{saveFormat}{Character, the format in which to save the plot (default is "pdf").}
 
-\item{outdir}{}
+\item{outdir}{Character, the directory where the plot file will be saved (default is "./").}
 
-\item{EXPname}{}
-}
-\value{
-
+\item{EXPname}{Character, an additional name to include in the plot file name (default is "").}
 }
 \description{
-Title
+This function generates a scatter plot comparing Bliss z-scores before and
+after correction CRISPRcleanR^2. The points are colored according dual guide class (e.g. "PositiveControls").
+}
+\seealso{
+\code{\link{ccr2.compute_bliss}}
 }

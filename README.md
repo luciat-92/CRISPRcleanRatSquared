@@ -1,6 +1,6 @@
 # CRISPRcleanR^2
 
-v0.5.1: Correct combinatorial screens:
+v0.6.0: Correct combinatorial screens:
 It can handle both logFC and count as input. Two functions to load input: multiple batches split or one unique file with batches combined.
 If multiple batches are available, guide pairs in common are merged taking the average.
 All guides (apart from non-target VS non-target) are corrected
@@ -10,6 +10,8 @@ All guides (apart from non-target VS non-target) are corrected
 - use CRISPRcleanR to correct
 - decouple correction approximating linear system with box constraints (custom per CL) via OSQP (option to split system based on unconnected components) and get pairwise correction
 - create 2 separate models for gene vs nontarget and correct without solving the linear system
+
+Update v0.6.0: annotate all functions (roxygen style), removed unnecessary functions (e.g. solve_system_fun)
 
 Update v0.5.1: add also minimum correction constraints as minimum correction in single CL 
 

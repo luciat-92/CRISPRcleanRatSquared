@@ -2,12 +2,11 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.modelSingleVSPseudoSingle}
 \alias{ccr2.modelSingleVSPseudoSingle}
-\title{Title}
+\title{Model comparison between pseudo-single and single guides logFCs for a specific position}
 \usage{
 ccr2.modelSingleVSPseudoSingle(
   pseudo_single_FC,
   guide_id,
-  correctGW = NULL,
   display = TRUE,
   saveToFig = FALSE,
   saveFormat = "pdf",
@@ -16,26 +15,28 @@ ccr2.modelSingleVSPseudoSingle(
 )
 }
 \arguments{
-\item{pseudo_single_FC}{}
+\item{pseudo_single_FC}{Data frame containing logFCs for pseudo-single guides and logFCs for single KO in matching guides (output of ccr2.createPseudoSingle_combine).}
 
-\item{guide_id}{}
+\item{guide_id}{Identifier for the sgRNA position to be considered (1 or 2).}
 
-\item{correctGW}{}
+\item{display}{A logical indicating whether to display plots. Default is TRUE.}
 
-\item{display}{}
+\item{saveToFig}{A logical indicating whether to save plots to files. Default is FALSE.}
 
-\item{saveToFig}{}
+\item{saveFormat}{The format in which to save the plots (e.g., "pdf", "png"). Default is "pdf".}
 
-\item{saveFormat}{}
+\item{outdir}{Directory where the plot files will be saved. Default is "./".}
 
-\item{outdir}{}
-
-\item{EXPname}{}
+\item{EXPname}{Name for the experiment. Default is an empty string.}
 }
 \value{
-
+A list containing the model fit, summary statistics of the model, and guides removed due to as outliers from Cook's distance
 }
 \description{
-Model to convert combined dual to single screens
-that depends on the specific gene selection
+This function performs a linear regression to model the relationship between
+average log fold changes of pseudo-single guides and their corresponding single guides
+for a specific guide position.
+The regression also include the number of guide pairs used to compute the pseudo-single logFCs ("n").
+In addition, it removed outliers based on extreme cooks distance from the regression (> 99\% quantile)
+and it recomputes the linear regression after those outliers removal.
 }

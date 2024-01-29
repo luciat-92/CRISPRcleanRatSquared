@@ -22,18 +22,18 @@ NULL
 #'
 #' get_input_data() load files as indicated in param_file or param_list. 
 #' Must include count1_file, library1_file and copy_number_file. 
-#' Multiple count and library files can be passed (increasing index order). 
+#' Multiple count and library files can be passed (increasing index order). The output will keep separately the batches 
 #' Additional used inputs are input_fold and out_fold (default = "./") and CL_name (default = "./")
 #'
 #' @param param_file .tsv file, the first column indicates the type of data, the
 #'   second the file location. Can include multiple files that contain the name
 #'   count or library BUT the length must coincide.
-#' @param param_list 
+#' @param param_list list with input files' location to be passed. The names in the list must include count1_file, library1_file and copy_number_file
 #'
 #' @return a list 
 #' - CNA: copy number, one row per gene 
-#' - count:  dual KO count, one row per guides combination 
-#' - library: metadata for dual KO library
+#' - count: list of dual KO count (per batch), one row per guides combination 
+#' - library: list of metadata for dual KO library (per batch)
 #' - CL_name: cell line name
 #' - out_fold: location to store results
 #' @export
@@ -307,14 +307,38 @@ get_input_data <- function(
 #' Load matched files for dual KO
 #'
 #' get_input_data.v1() load files as indicated in param_file or param_list. 
-#' Must include result_file, library_file and copy_number_file. 
-#' Only one file per type is passed (suitable for different batches combined)
+#' Must include result_file, library_file and copy_number_file (tab separated). 
+#' Only one file per type is passed (suitable for different batches previously combined in a unique file)
+#' The result_file must have the first 13 column with the following structure:
+#' - ID: guide pair ID string inside the batch (if any)
+#' - lib: batch ID string
+#' - ID_lib: combination from the columns ID and lib separated by an underscore
+#' - Note1: class for guide pairs (e.g. PositiveControls, AnchorSingletons, etc)
+#' - Note2: additional class for guide pairs (could be more granular like ESSENTIAL-NONTARGET)
+#' - Gene_pair: HGNC symbol of the genes pair targeted by guide in position 1 and position 2 (separated by ~) 
+#' - Gene1: HGNC symbol of the gene targeted by guide in position 1
+#' - Gene2: HGNC symbol of the gene targeted by guide in position 2
+#' - sgRNA1_WGE_ID: sgRNA ID for guide in position 1
+#' - sgRNA1_WGE_Sequence: sgRNA sequence for guide in position 1
+#' - sgRNA2_WGE_ID: sgRNA ID for guide in position 2
+#' - sgRNA2_WGE_Sequence: sgRNA sequence for guide in position 2
+#' - SEQ_pair: sgRNA sequence for guide in position 1 and 2 separated by ~
+#' The remaining columns include log fold changes per cell line (<CL_name>_logFC)
+#' *IMPORTANT*: the dual guides with the same SEQ_pair across batches (lib) will be merged taking the mean.
 #' Additional used inputs are input_fold and out_fold (default = "./") and CL_name (default = "./")
 #'
-#' @param param_file 
-#' @param param_list 
+#' @param param_file .tsv file, the first column indicates the type of data, the
+#' second the file location. 
+#' @param param_list list with input files' location to be passed. The names in the list must include result_file, library_file and copy_number_file
 #'
-#' @return
+#'
+#' @return a list 
+#' - CNA: copy number, one row per gene 
+#' - result: data.frame of dual KO logFC for the CL_name considered, one row per guides combination (unique identifier based on SEQ_pair)
+#' - library: data.frame of metadata for dual KO library
+#' - CL_name: cell line name
+#' - out_fold: location to store results
+#' 
 #' @export
 #'
 #' @examples
@@ -544,10 +568,15 @@ get_input_data.v1 <- function(
   
   # if CL_name in columns dual_results, get only that
   new_name <- sprintf("%s_logFC", CL_name)
-  dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
-    dplyr::rename(Note = Note1, 
-                  MyNote = Note2, 
-                  !!new_name := CL_name)
+  if (CL_name %in% colnames(dual_result)) {
+    dual_result_CL <- dual_result[, c(1:13, which(colnames(dual_result) == CL_name))] %>%
+      dplyr::rename(Note = Note1, 
+                    MyNote = Note2, 
+                    !!new_name := CL_name)
+    
+  }else{
+    stop("CL is not present in the result table!")
+  }
   
   if ("Gene_pair" %in% colnames(dual_result_CL)) {
     dual_result_CL <- dual_result_CL 
@@ -591,8 +620,6 @@ get_input_data.v1 <- function(
     }
   }
   
-  
-  
   return(list(CNA = CNA, 
               result = dual_result_CL, 
               library =  dual_library, 
@@ -601,19 +628,29 @@ get_input_data.v1 <- function(
   
 }
 
-#' Title
+#' Run complete CRISPRCleanR analysis on genome-wide CRISPR-cas9 single KO
 #'
-#' @param filename_single 
-#' @param min_reads_single 
-#' @param EXPname 
-#' @param libraryAnnotation_single 
-#' @param display 
-#' @param outdir 
+#' This function performs a complete analysis using CRISPRcleanR on genome-wide CRISPR-cas9 KO data
+#' It includes normalization, fold change computation and CRISPRcleanR correction.
 #'
-#' @return
-#' @export
+#' @param filename_single A string specifying the path of a tsv file containing the raw sgRNA counts. This must be a tab delimited file with one row per sgRNA and the following columns/headers: 
+#' - sgRNA: containing alphanumerical identifiers of the sgRNA under consideration;
+#' - gene: containing HGNC symbols of the genes targeted by the sgRNA under consideration;
+#' followed by the columns containing the sgRNAs' counts for the controls and columns for library trasfected samples.
+#' @param min_reads_single This parameter defines a filter threshold value for sgRNAs, based on their average counts in the control sample. 
+#' Specifically, it indicates the minimal number of counts that each individual sgRNA needs to have in the controls (on average) in order to be included in the output.
+#' @param EXPname A string specifying the name of the experiment. 
+#' @param libraryAnnotation_single A data frame containing the sgRNA annotations, with a named row for each sgRNA, and columns for targeted genes, genomic coordinates and possibly other information. 
+#' @param display A logic value specifying whether figures containing boxplots with the count values pre/post normalisation and log fold-changes should be visualised (deafult is FALSE).
+#' @param outdir Output directory for storing results (default is "./").
+#'
+#' @return A list containing the following components:
+#' - FC: Data frame containing corrected log fold changes
+#' - segment: Data frame with segmented results
+#' - library: Updated library annotation
 #'
 #' @examples
+#' @export
 ccr.run_complete <- function(
   
   filename_single, 
@@ -656,7 +693,6 @@ ccr.run_complete <- function(
   single_correctedFCs$corrected_logFCs <- single_correctedFCs$corrected_logFCs %>% 
     dplyr::mutate(correction = correctedFC - avgFC)
 
-  
   # save segments
   single_ccr_segments <- single_correctedFCs$segments
   # add mean and sd
@@ -698,19 +734,23 @@ ccr.run_complete <- function(
   
 }
 
-
-#' Title
+#' Get summary statistics for singletons
 #'
-#' @param dual_FC 
-#' @param corrected 
+#' This function calculates summary statistics for singletons in a dual KO screen.
+#' It provides information such as median, mean, standard deviation, and interquartile range for the fold changes
+#' of singletons at both positions (Position 1 and Position 2).
 #'
-#' @return
-#' @export
+#' @param dual_FC Data frame containing dual-KO fold changes.
+#' @param corrected Logical, indicating whether to use ccr2 corrected fold changes (default is FALSE).
+#'
+#' @return A list containing two data frames with summary statistics for singletons at Position 1 and Position 2.
+#' Each data frame includes columns such as target gene, target gene ID, median fold change, interquartile range, mean fold change,
+#' standard deviation, sample size, related singletons' genes, related singletons' gene IDs, and additional information.
 #'
 #' @examples
+#' @export
 ccr2.get_summary_singletons <- function(dual_FC, 
-                                       # singletons_n_guides, 
-                                       corrected = F){
+                                       corrected = FALSE){
   
   name_var <- "avgFC"
   if (corrected) {
@@ -722,7 +762,10 @@ ccr2.get_summary_singletons <- function(dual_FC,
     dplyr::group_by(sgRNA1_WGE_ID) %>%
     dplyr::summarise(n_ID = dplyr::n()) %>%
     dplyr::arrange(desc(n_ID)) %>%
-    dplyr::filter(n_ID > 30) %>% # how to set this??
+    dplyr::filter(n_ID > 30) %>% # how to set this?? This threshold is used to 
+    # select sgRNA1_WGE_ID that are NON-ESSENTIAL genes / INTERGENIC regions 
+    # used as negative controls in the singletons pairs. 
+    # Only "high" counts will be associated to a lot of matches having those guides
     dplyr::pull(sgRNA1_WGE_ID) %>%
     sort()
   
@@ -731,8 +774,10 @@ ccr2.get_summary_singletons <- function(dual_FC,
     dplyr::group_by(sgRNA2_WGE_ID) %>%
     dplyr::summarise(n_ID = dplyr::n()) %>%
     dplyr::arrange(desc(n_ID)) %>%
-    dplyr::filter(n_ID > 30) %>% # how to set this??
-    #dplyr::slice_max(n_ID) %>% ## only working if the number is always the same! adjust
+    dplyr::filter(n_ID > 30) %>% # how to set this?? This threshold is used to 
+    # select sgRNA2_WGE_ID that are NON-ESSENTIAL genes / INTERGENIC regions 
+    # used as negative controls in the singletons pairs. 
+    # Only "high" counts will be associated to a lot of matches having those guides
     dplyr::pull(sgRNA2_WGE_ID) %>%
     sort()
   
@@ -784,15 +829,18 @@ ccr2.get_summary_singletons <- function(dual_FC,
   
 }
 
-#' Title
+#' Scale fold changes based on positive and negative controls in dual KO screens
+#' This function scales fold changes in a dual KO screens based on the median values of positive and negative controls.
+#' It calculates a scaled version of fold changes, making them such that negative controls are centered at 0 and positive controls at 1.
 #'
-#' @param dual_FC 
-#' @param corrected 
+#' @param dual_FC Data frame containing dual KO log fold changes.
+#' @param corrected Logical, indicating whether to use corrected fold changes (default is FALSE).
 #'
-#' @return
-#' @export
+#' @return A data frame with scaled fold changes, where each fold change is centered around the median value of negative controls.
+#' If `corrected` is TRUE, the resulting data frame includes a column named `correctedFC_scaled`; otherwise, it includes `avgFC_scaled`.
 #'
 #' @examples
+#' @export
 ccr2.scale_pos_neg <- function(dual_FC, corrected = FALSE){
   
   dual_FC_original <- dual_FC
@@ -829,21 +877,24 @@ ccr2.scale_pos_neg <- function(dual_FC, corrected = FALSE){
 }
 
 
-#' Title
+#' Match single KO data with singletons and generate comparison plot
 #'
-#' @param match_dual_single_seq 
-#' @param single_FC 
-#' @param singletons_summary_FC 
-#' @param saveToFig 
-#' @param display 
-#' @param saveFormat 
-#' @param EXPname 
-#' @param outdir 
+#' This function matches single KO data with singletons median results from dual KO (output of ccr2.get_summary_singletons) 
+#' and generates a comparison plot between single KO fold changes (FC) and median FC of singletons for the paired genes.
 #'
-#' @return
-#' @export
+#' @param match_dual_single_seq Data frame containing the matching information between sgRNA in dual KO and single KO libraries (output of ccr2.matchDualandSingleSeq).
+#' @param single_FC Data frame containing single KO fold changes.
+#' @param singletons_summary_FC List of 2 data frames with summary statistics for singletons from dual KO (output of ccr2.get_summary_singletons).
+#' @param saveToFig Logical, indicating whether to save the comparison plot as a figure (default is FALSE).
+#' @param display Logical, indicating whether to display the comparison plot (default is TRUE).
+#' @param saveFormat If saveToFig is TRUE, the format in which to save the figure (e.g., "png", "pdf", "jpeg").
+#' @param EXPname Name of the experiment.
+#' @param outdir Output directory for storing results (default is "./").
+#'
+#' @return A data frame containing matched information between single KO data and singletons by gene name.
 #'
 #' @examples
+#' @export
 ccr2.match_singletons_singleFC <- function(match_dual_single_seq, 
                                            single_FC, 
                                            singletons_summary_FC, 
@@ -895,15 +946,21 @@ ccr2.match_singletons_singleFC <- function(match_dual_single_seq,
   
 }
 
-#' Title
+#' Compute Bliss z-score for the dual KO
 #'
-#' @param dual_FC 
-#' @param corrected 
+#' This function computes Bliss z-score for the dual KO screen, considering the expected fold changes
+#' based on the medians of singletons associated with each guide pair.
 #'
-#' @return
-#' @export
+#' @param dual_KO Data frame containing dual KO fold changes.
+#' @param corrected Logical, indicating whether to use CRISPRcleanR^2 corrected fold changes (default is FALSE).
+#'
+#' @return A data frame with Bliss z-score computed for each guide pair in the dual KO screen.
+#' If `corrected` is TRUE, the resulting data frame includes columns named `expected_pairFC_corrected` and `bliss_zscore_corrected`;
+#' otherwise, it includes `expected_pairFC` and `bliss_zscore`.
 #'
 #' @examples
+#'
+#' @export
 ccr2.compute_bliss <- function(dual_FC,
                                corrected = FALSE) { 
   
@@ -954,12 +1011,16 @@ ccr2.compute_bliss <- function(dual_FC,
 }
 
 
-#' Title
+#' Match dual library sequence to single library sequences
 #'
-#' @param dual_seq 
-#' @param single_library_seq 
+#' This function matches a sequence from a dual KO library to sequences in a single KO library based on chromosome and sequence.
+#' It matches one sequence in dual KO per time
 #'
-#' @return
+#' @param dual_seq Data frame with one row containing the sequence information from the dual library.
+#' @param single_library_seq Data frame containing the sequence information from the single library for all sgRNA in the library.
+#'
+#' @return A named logical vector indicating matches between the single library sequences and the one dual library sequence.
+#' The names of the vector represent the CHR_GENES_SEQ values from the single library, and the values are logical indicating matches.
 #'
 #' @examples
 match_dual_to_single <- function(dual_seq, single_library_seq){
@@ -993,15 +1054,19 @@ match_dual_to_single <- function(dual_seq, single_library_seq){
   
 }  
 
-#' Title
+#' Match sequences between sgRNA in dual and single libraries
 #'
-#' @param dual_library 
-#' @param single_library 
+#' This function matches sequences between a dual library and a single library in a CRISPRcleanR^2 analysis.
+#' It creates a data frame with all sgRNAs from dual library (no repetitions, union of those in position 1 and position2) and 
+#' includes the matched single library IDs and sequences, if a match exists.
 #'
-#' @return
-#' @export
+#' @param dual_library Data frame containing information from the dual library (one row per guide pair).
+#' @param single_library Data frame containing information from the single library (one row per guide).
+#'
+#' @return A data frame with one row per sgRNA in dual library (union of position 1 and position 2), including matched single library IDs and sequences.
 #'
 #' @examples
+#' @export
 ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
   
   dual_library_seq <- data.frame(
@@ -1040,9 +1105,6 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
                     GENES %in% dual_library_seq$GENES | 
                     ADDITIONAL_GENE_NAME %in% dual_library_seq$GENES | 
                     GENES == "NON-TARGETING")
-  
-  # NOTE: RACK1, MARCHF5 and INTS6L removed because they have another name in single,
-  # how to solve? (partially solved with hg38 matching)
  
   # Create matrix to match single x dual SEQ
   # ALTERNATIVE WITH LIST, TODO: RM
@@ -1083,15 +1145,18 @@ ccr2.matchDualandSingleSeq <- function(dual_library, single_library) {
 }
 
 
-#' Title
+#' Normalize fold changes in dual KO screens
 #'
-#' @param Dframe 
-#' @param min_reads 
+#' This function normalizes the fold changes in a dual KO screen, removing pairs with low read counts and
+#' calculating log2 fold changes relative to a control sample.
 #'
-#' @return
-#' @export
+#' @param Dframe Data frame containing the raw counts from dual KO screen, raw counts start from the 9th column. The 9th column include the control raw counts.
+#' @param min_reads Minimum number of reads required in the control sample (e.g. plasmid) for a pair to be retained (default is 30).
+#'
+#' @return A list containing log2 fold changes, normalized counts, and normalization factors.
 #'
 #' @examples
+#' @export
 ccr2.NormfoldChanges <- function(
   Dframe, 
   min_reads = 30
@@ -1135,15 +1200,19 @@ ccr2.NormfoldChanges <- function(
               factor = norm_fact_vector))
 }
 
-#' Title
+#' Compute mean of logFCs across replicates, annotate sgRNA pairs with chromosomal positions
 #'
-#' @param dual_FC 
-#' @param dual_library 
+#' This function computes the mean of logFCs across replicates (if any) and annotate each 
+#' sgRNA pairs with chromosomal positions (BP) as the median point of the sgRNA 
+#' in position 1/position 2 start and end. It provides additional information about the sgRNAs and their genomic locations.
 #'
-#' @return
-#' @export
+#' @param dual_FC data frame containing dual KO log fold changes,
+#' @param dual_library data frame containing information about the sgRNAs and their genomic locations.
+#'
+#' @return A data frame with avg log fold changes and information about the sgRNAs' genomic locations.
 #'
 #' @examples
+#' @export
 ccr2.logFCs2chromPos <- function(
   dual_FC, 
   dual_library
@@ -1179,20 +1248,23 @@ ccr2.logFCs2chromPos <- function(
   
 }
 
-#' Title
+#' Create pseudo-single logFCs from dual KO logFCs in CRISPRcleanR^2 analysis
 #'
-#' psuedo single avgFC via mean for each gene in guide1 or guide2 across all the other genes
-#' store also number of genes from which mean is computed
+#' This function creates pseudo-single logFCs from dual KO logFCs. Considering a sgRNA in position i (1 or 2), 
+#' it assign the pseudo single value as the average logFC across all the dual guide pairs having that sgRNA in position i. 
+#' The resulting data frame contains details about the sgRNAs, their genomic locations, 
+#' and log fold changes from both the pseudo single and the single KO, if the sgRNA sequence matches (if not replaced by NAs)
 #'
-#' @param dual_FC 
-#' @param guide_id 
-#' @param single_FC 
-#' @param match_dual_single_seq 
+#' @param dual_FC Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column)
+#' @param single_FC Data frame with single KO logFCs.
+#' @param match_dual_single_seq Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).
+#' @param guide_id Identifier for the sgRNA position to be considered (1 or 2).
 #'
-#' @return
-#' @export
+#' @return A data frame containing details about the sgRNAs, their genomic locations, 
+#' and log fold changes from both the pseudo single and the single KO, if the sgRNA sequence matches (if not replaced by NAs).
 #'
 #' @examples
+#' @export
 ccr2.createPseudoSingle <- function(
   dual_FC, 
   single_FC, 
@@ -1257,21 +1329,23 @@ ccr2.createPseudoSingle <- function(
   
 }
 
-#' Title
+#' Create pseudo-single logFCs from dual KO logFCs in CRISPRcleanR^2 analysis for both positions
 #'
-#' @param dual_FC 
-#' @param saveToFig 
-#' @param display 
-#' @param saveFormat 
-#' @param EXPname 
-#' @param outdir 
-#' @param single_FC 
-#' @param match_dual_single_seq 
+#' This function creates pseudo-single logFCs from dual KO logFCs, both for position 1 and position 2 (see ccr2.createPseudoSingle)
+#' 
+#' @param dual_FC Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column).
+#' @param single_FC Data frame with single KO logFCs.
+#' @param match_dual_single_seq Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).
+#' @param saveToFig Logical indicating whether to save the plot to a file.
+#' @param display Logical indicating whether to display the plot.
+#' @param saveFormat The format in which to save the plot (e.g., "png", "pdf"). Default is NULL.
+#' @param EXPname Name for the experiment. Default is an empty string.
+#' @param outdir Directory where the plot file will be saved. Default is "./".
 #'
-#' @return
-#' @export
+#' @return A list containing data frames for pseudo-single guides in position 1 (`sgRNA1`) and position 2 (`sgRNA2`).
 #'
 #' @examples
+#' @export
 ccr2.createPseudoSingle_combine <- function(
   dual_FC, 
   single_FC, 
@@ -1358,28 +1432,30 @@ ccr2.createPseudoSingle_combine <- function(
 }
 
 
-#' Title
+#' Model comparison between pseudo-single and single guides logFCs for a specific position
 #'
-#' Model to convert combined dual to single screens
-#' that depends on the specific gene selection
+#' This function performs a linear regression to model the relationship between 
+#' average log fold changes of pseudo-single guides and their corresponding single guides 
+#' for a specific guide position. 
+#' The regression also include the number of guide pairs used to compute the pseudo-single logFCs ("n"). 
+#' In addition, it removed outliers based on extreme cooks distance from the regression (> 99% quantile) 
+#' and it recomputes the linear regression after those outliers removal.
 #'
-#' @param guide_id 
-#' @param correctGW 
-#' @param display 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
-#' @param pseudo_single_FC 
+#' @param pseudo_single_FC Data frame containing logFCs for pseudo-single guides and logFCs for single KO in matching guides (output of ccr2.createPseudoSingle_combine).
+#' @param guide_id Identifier for the sgRNA position to be considered (1 or 2).
+#' @param display A logical indicating whether to display plots. Default is TRUE.
+#' @param saveToFig A logical indicating whether to save plots to files. Default is FALSE.
+#' @param saveFormat The format in which to save the plots (e.g., "pdf", "png"). Default is "pdf".
+#' @param outdir Directory where the plot files will be saved. Default is "./".
+#' @param EXPname Name for the experiment. Default is an empty string.
 #'
-#' @return
-#' @export
+#' @return A list containing the model fit, summary statistics of the model, and guides removed due to as outliers from Cook's distance
 #'
 #' @examples
+#' @export
 ccr2.modelSingleVSPseudoSingle <- function(
   pseudo_single_FC, 
   guide_id, 
-  correctGW = NULL,
   display = TRUE, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
@@ -1570,18 +1646,23 @@ ccr2.modelSingleVSPseudoSingle <- function(
               rm_guides_cooks = rm_guides_cooks))
 }
 
-#' Title
+#' Inject data from single KO space to pseudo-single space (for a specific guide position) at the genome-wide level
 #'
-#' @param model_single_to_pseudo 
-#' @param single_FC 
-#' @param guide_id 
-#' @param correctGW 
-#' @param pseudo_single_FC 
+#' This function predicts pseudo-single logFCs values at the genome-wide level 
+#' based on the model fitted to the relationship between matching pseudo-single and single guides. 
+#' The predicted values are filling the genome-wide space based on single KO guides (data injection). 
+#' The actual pseudo-single guides instead of the predicted ones are used where available.
 #'
-#' @return
-#' @export
+#' @param model_single_to_pseudo Fitted model object representing the relationship between single and pseudo-single logFCs (output of ccr2.modelSingleVSPseudoSingle).
+#' @param pseudo_single_FC Data frame containing logFCs for pseudo-single guides and logFCs for single KO in matching guides (output of ccr2.createPseudoSingle_combine).
+#' @param single_FC Data frame containing logFCs for single KO.
+#' @param guide_id Identifier for the guide position (1 or 2).
+#' @param correctGW A character specifying the type of pseudo-single logFCs mean centering after data-injection ("CHR": per chromosome, "GW": genome-wide, or NULL for no centering). Default is NULL. #TODO: USED FOR TESTING, REMOVE!
+#'
+#' @return A data frame containing information for pseudo-single guides with injected values.
 #'
 #' @examples
+#' @export
 ccr2.injectData <- function(
   model_single_to_pseudo,
   pseudo_single_FC,
@@ -1658,25 +1739,27 @@ ccr2.injectData <- function(
   
 }
 
-#' Title
+#' Post-processing of CRISPRcleanR corrected psuedo-single logFCs 
 #'
-#' adjust ccr output applied to pseudo single and filter per considered guide in dual, 
-#' get segments only for guides in the dual screen
+#' This function filters and post-process psuedo-single logFCs after genome-wide 
+#' CRISPRcleanR correction (output of ccr.GWclean). It filters for those guides originally available in the pseudo-single logFCs (i.e. present in dual KO)
+#' It provides information about the pseudo-single correction values and gene segments in a specific guide position (1 or 2).
 #'
-#' @param dataInjection_correctedFCs 
-#' @param guide_id 
-#' @param saveToFig 
-#' @param display 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
-#' @param pseudo_single 
-#' @param dataInjection_segments 
+#' @param dataInjection_correctedFCs Data frame containing corrected injected pseudo-single logFCs via CRISPRcleanR (output of ccr.GWclean).
+#' @param dataInjection_segments Data frame containing information about identified gene segments from injected pseudo-single logFCs via CRISPRcleanR (output of ccr.GWclean).
+#' @param pseudo_single Data frame containing information for pseudo-single logFCs (before CRISPRcleanR correction, output of ccr2.createPseudoSingle_combine)
+#' @param guide_id Identifier for the guide position (1 or 2).
+#' @param saveToFig Logical, indicating whether to save the generated plots to files. Default is FALSE.
+#' @param display Logical, indicating whether to display the plots. Default is TRUE.
+#' @param saveFormat File format for saving the plots (e.g., ".pdf", ".png"). Default is ".pdf".
+#' @param outdir Directory to save the plots. Default is "./".
+#' @param EXPname Experiment name to include in the plot filenames.
 #'
-#' @return
-#' @export
+#' @return A list containing data frames with information about corrected pseudo-single logFCs 
+#' and gene segments identified by CRISPRcleanR, for those guides originally available in the dual KO screen.
 #'
 #' @examples
+#' @export
 ccr2.filterGWclean <- function(
   dataInjection_correctedFCs, 
   dataInjection_segments,
@@ -1780,24 +1863,38 @@ ccr2.filterGWclean <- function(
   
 }
 
-#' Title
+#' Approximate the solutions of linear system to retrieve dual KO CRISPRcleanR^2 correction
 #'
-#' @param dual_FC 
-#' @param display 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
-#' @param pseudo_single_p1_correctedFCs 
-#' @param pseudo_single_p2_correctedFCs 
-#' @param split_graph 
-#' @param single_FC_corrected 
-#' @param match_dual_single_seq 
+#' This function solves a linear system (approximated solution, underdetermined system plus box constraints) to identify dual KO CRISPRcleanR^2 correction, 
+#' taking into account pseudo-single correction and how pseudo-single guides are built from dual KO guides.
+#' It provides information about the dual KO corrected logFCs as well as the correction values for pseudo-single logFCs.
+#' The function also plots the actual pseudo-single correction versus the approximated solution, original VS corrected dual logFCs and psuedo-single correction (position1 and position2) compared to retrieved dual correction.
 #'
-#' @return
-#' @export
+#' @param dual_FC Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column).
+#' @param single_FC_corrected Data frame containing CRISPRcleanR corrected logFCs for single KO.
+#' @param match_dual_single_seq Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).
+#' @param pseudo_single_p1_correctedFCs Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides in position 1 (output of ccr2.filterGWclean).
+#' @param pseudo_single_p2_correctedFCs Data frame containing cCRISPRcleanR corrected logFCs for pseudo-single guides in position 2 (output of ccr2.filterGWclean).
+#' @param split_graph Logical, indicating whether to split the graph representing the coefficient matrix of the system into largest connected component plus everything else. It depends on the position 1 VS position 2 pairs configurations. When possible, split reduces the computational complexity. Default is TRUE.
+#' @param display Logical, indicating whether to display the plots. Default is TRUE.
+#' @param saveToFig Logical, indicating whether to save the generated plots to files. Default is FALSE.
+#' @param saveFormat File format for saving the plots (e.g., ".pdf", ".png"). Default is ".pdf".
+#' @param outdir Directory to save the plots. Default is "./".
+#' @param EXPname Experiment name to include in the plot filenames.
 #'
+#' @return A list containing 
+#' -  max_correction: maximum dual correction allowed based on single KO correction (used as upper bound for the solution).
+#' -  min_correction: minimum dual correction allowed based on single KO correction (used as upper bound for the solution).
+#' -  dual_FC: Data frame of dual KO including CRISPRcleanR^2 correction.
+#' -  pseudo_single: Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides (both positions), it also includes the fitted pseudo-single correction obtained as system solution.
+#' -  matrix_interactions: matrix with logical entries, rows = sgRNAs in position 1 and cols =  sgRNAs in position 2. Each entry indicates if the pair sgRNA pos1 ~ sgRNA pos 2 exists in the given dual KO dataset.
+#' -  sys_solution: system solution by the chosen solver (OSQP solver from CVXR, output of \code{\link{get_pairwise_correction}})
+#' 
 #' @examples
+#' @seealso 
+#' \code{\link{get_pairwise_correction}}
+#' 
+#' @export
 ccr2.solveLinearSys <- function(
   dual_FC, 
   single_FC_corrected, 
@@ -1978,20 +2075,21 @@ ccr2.solveLinearSys <- function(
     sys_solution = sys_solution))
 }
 
-#' Title
+#' Plot logFC distributions for before and after CRISPRcleanR^2 correction, separating per dual guides classes
+#' 
+#' This function generates boxplots and density plots for the distribution of logFC values (before and after CRISPRcleanR^2 correction), 
+#' comparing dual guides classes.
 #'
-#' plot: distribution before and after based on classes
+#' @param dual_FC_correctedFC Data frame containing information about corrected logFC values for dual KO.
+#' @param saveToFig Logical, indicating whether to save the generated plot to a file. Default is FALSE.
+#' @param saveFormat File format for saving the plot (e.g., ".pdf", ".png"). Default is ".pdf".
+#' @param outdir Directory to save the plot. Default is "./".
+#' @param EXPname Experiment name to include in the plot filename.
 #'
-#' @param dual_FC_correctedFC 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
-#'
-#' @return
-#' @export
+#' @return NULL
 #'
 #' @examples
+#' @export
 ccr2.plotClasses <- function(
   dual_FC_correctedFC, 
   saveToFig = F, 
@@ -2044,16 +2142,24 @@ ccr2.plotClasses <- function(
   
 }
 
-#' Title
+#' Add Copy Number Alteration (CNA) information to dual KO data.
 #'
-#' combine copy number info with dual FC data.frame
+#' This function takes a data frame containing dual KO information and a data frame with copy number alteration (CNA) information. 
+#' It adds CNA information to the dual KO data based on genomic positions. 
+#' It gives info on CN for gene in position 1 and position 2, 
+#' as well as the sum, maximum and product of the CN of genes in position 1 and 2.
 #'
-#' @param CNA 
-#' @param dual_FC
-#'
-#' @return
+#' @param CNA A data frame containing copy number alteration information. It must include the following columns:
+#'  - CHROM: chromosome id in "chri" format   
+#'  - start: start of the CN region, genomic location in base pair
+#'  - end: end of the CN region, genomic location in base pair
+#'  - C: copy number (absolute) value 
+#' @param dual_FC A data frame containing dual KO data.
+#' 
+#' @return A data frame similar to dual_FC with added CNA information. The dual guides with no CNA info in at least one position are removed.
+#' 
+#' @examples
 #' @export
-#'
 ccr2.add_CNA <- function(
   CNA, 
   dual_FC
@@ -2126,30 +2232,35 @@ ccr2.add_CNA <- function(
 }
 
 
-#' Title
+#' Plot Copy Number Alteration (CNA) information for dual KO data before and after CRISPRcleanr^2 correction.
 #'
-#' plot: distribution with respect to CN
+#' This function creates boxplots to visualize the relationship between CNA and dual KO logFCs. 
+#' It outputs two types of boxplots: the first plots the Maximum CNA between position 1 and position 2 versus logFCs
+#' It provides insights into how CNAs configurations may affect the logFC of dual guides.
 #'
-#' @param dual_FC_correctedFC 
-#' @param CNA 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
-#' @param excludeGene 
-#' @param var_to_plot 
+#' @param dual_FC_correctedFC A data frame containing CRISPRcleanR^2 corrected logFCs for dual KO.
+#' @param CNA A data frame containing copy number alteration information.
+#' @param saveToFig Logical, indicating whether to save the plots to files (default is FALSE).
+#' @param saveFormat Character, the format for saving the plots (default is "pdf").
+#' @param outdir Character, the directory to save the plots (default is "./").
+#' @param EXPname Character, a prefix to add to the saved plot filenames (default is "").
+#' @param excludeGene Character vector, genes to be excluded from dual_FC_correctedFC (default is NULL).
+#' @param var_to_plot Character, the variable to plot. If "observed" (default), plots logFCs. Otherwise a user-defined variable, such as bliss z-scores.
 #'
-#' @return
-#' @export
+#' @return NULL
 #'
 #' @examples
+#' @seealso
+#' \code{\link{ccr2.add_CNA}}
+#'
+#' @export
 ccr2.plotCNA <- function(
   dual_FC_correctedFC, 
   CNA, 
   saveToFig = FALSE, 
   saveFormat = "pdf",
   outdir = "./", 
-  EXPname ="", 
+  EXPname = "", 
   excludeGene = NULL, 
   var_to_plot = "observed"
 ) {
@@ -2240,24 +2351,29 @@ ccr2.plotCNA <- function(
   
 }
 
-#' Title
+#' Plot density of dual KO logFCs, separating for extreme Copy Number Alteration (CNA) events.
 #'
-#' plot: density divided per max CNA threshold
+#' This function creates density plots to visualize the distribution of dual KO logFCs 
+#' separating for extreme CNA (higher than a certain threshold). The density is shown before and after CRISRPcleanR^2 correction.
+#' It provides insights into how CNAs may influence the logFC distribution.
 #'
-#' @param dual_FC_correctedFC 
-#' @param CNA 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
-#' @param excludeGene 
-#' @param CN_thr 
-#' @param var_to_plot 
+#' @param dual_FC_correctedFC A data frame containing CRISPRcleanR^2 corrected logFCs for dual KO.
+#' @param CNA A data frame containing copy number alteration information.
+#' @param saveToFig Logical, indicating whether to save the plots to files (default is FALSE).
+#' @param saveFormat Character, the format for saving the plots (default is "pdf").
+#' @param outdir Character, the directory to save the plots (default is "./").
+#' @param EXPname Character, a prefix to add to the saved plot filenames (default is "").
+#' @param excludeGene Character vector, genes to be excluded from dual_FC_correctedFC (default is NULL).
+#' @param CN_thr Numeric (absolute), a threshold for defining extreme CNA.
+#' @param var_to_plot Character, the variable to plot. If "observed" (default), plots logFCs. Otherwise a user-defined variable, such as bliss z-scores.
 #'
-#' @return
-#' @export
-#'
+#' @return NULL
+#' 
 #' @examples
+#' @seealso
+#' \code{\link{ccr2.add_CNA}}
+#'
+#' @export
 ccr2.plotCNAdensity <- function(
   dual_FC_correctedFC, 
   CNA, 
@@ -2331,23 +2447,28 @@ ccr2.plotCNAdensity <- function(
   
 }
 
-#' Title
+#' Plot Copy Number Alteration (CNA) information for single KO data considering only guides matching with dual KO data, before and after CRISPRcleanR correction.
 #'
-#' plot: before and after correction of matching single dual gene
+#' This function creates two plots:
+#' 1. A boxplot showing the distribution of logFC for single KO guides in common with dual screen, stratified by copy number (CN).
+#' 2. A scatter plot comparing uncorrected logFC with corrected logFC for single KO guides in common with dual screen.
 #'
-#' @param dual_FC_correctedFC 
-#' @param match_dual_single_seq 
-#' @param single_correctedFCs 
-#' @param CNA 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
+#' @param dual_FC_correctedFC A data frame containing CRISPRcleanR^2 corrected logFCs for dual KO.
+#' @param match_dual_single_seq Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).
+#' @param single_correctedFCs Data frame containing single screen data with CRISPRcleanR corrected logFC.
+#' @param CNA A data frame containing copy number alteration information.
+#' @param saveToFig Logical, whether to save the plots to files (default is FALSE).
+#' @param saveFormat Character, the format for saving the plots (default is "pdf").
+#' @param outdir Character, the directory path for saving the plots (default is "./").
+#' @param EXPname Character, an identifier for the experiment (default is "").
 #'
-#' @return
+#' @return A data frame containing single screen data for matching guides in dual screen data with annotated copy number information.
+#' 
+#' @example
+#' @seealso
+#' \code{\link{ccr2.add_CNA}}
+#'  
 #' @export
-#'
-#' @examples
 ccr2.plotMatchingSingle <- function(
   dual_FC_correctedFC,  
   match_dual_single_seq, 
@@ -2443,18 +2564,25 @@ ccr2.plotMatchingSingle <- function(
   return(FC_withCNA)
 }
 
-#' Title
+#' Plot Bliss synergy z-scores before and after CRISPRcleanR^2 correction.
 #'
-#' @param df 
-#' @param outdir 
-#' @param EXPname 
-#' @param saveFormat 
-#' @param saveToFig 
+#' This function generates a scatter plot comparing Bliss z-scores before and
+#' after correction CRISPRcleanR^2. The points are colored according dual guide class (e.g. "PositiveControls").
 #'
-#' @return
-#' @export
+#' @param df A data frame containing Bliss z-scores before and after correction (output of ccr2.compute_bliss).
+#'        It should have columns 'bliss_zscore', 'bliss_zscore_corrected', and 'info'.
+#' @param saveToFig Logical, indicating whether to save the plot to a file (default is FALSE)
+#' @param saveFormat Character, the format in which to save the plot (default is "pdf").
+#' @param outdir Character, the directory where the plot file will be saved (default is "./").
+#' @param EXPname Character, an additional name to include in the plot file name (default is "").
+#'
+#' @return NULL
 #'
 #' @examples
+#' @seealso 
+#' \code{\link{ccr2.compute_bliss}}
+#' 
+#' @export
 ccr2.plot_correction <- function(df, 
                                  saveToFig = FALSE, 
                                  saveFormat = "pdf",
@@ -2483,18 +2611,24 @@ ccr2.plot_correction <- function(df,
   
 }
 
-#' Title
+#' Plot Bliss fit for expected vs observed dual KO logFC.
 #'
-#' @param dual_FC 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
+#' This function generates a scatter plot comparing expected vs observed logFC in dual KO.
+#' Two plots are shown, one before and one after CRISPRcleanR^2 correction. 
 #'
-#' @return
-#' @export
+#' @param dual_FC A data frame containing information about dual KO logFCs, with observed and expected logFCs in dual guide pairs based on bliss model (output of ccr2.compute_bliss).
+#' @param saveToFig Logical, indicating whether to save the plot to a file .
+#' @param saveFormat Character, the format in which to save the plot (default is "pdf", NOTE: the generated output will be heavy in size).
+#' @param outdir Character, the directory where the plot file will be saved (default is "./").
+#' @param EXPname Character, an additional name to include in the plot file name (default is "").
+#'
+#' @return NULL
 #'
 #' @examples
+#' @seealso 
+#' \code{\link{ccr2.compute_bliss}}
+#' 
+#' @export
 ccr2.plot_bliss_fit <- function(dual_FC, 
                                 saveToFig = FALSE, 
                                 saveFormat = "pdf",
@@ -2539,22 +2673,32 @@ ccr2.plot_bliss_fit <- function(dual_FC,
   
 }
 
-
-#' Title
+#' Plot Bliss Z-score vs logFC to identify synergistic and lethal pairs.
 #'
-#' @param dual_FC 
-#' @param corrected 
-#' @param THR_FC 
-#' @param THR_BLISS 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param outdir 
-#' @param EXPname 
+#' This function generates a scatter plot comparing Bliss Z-score with logFC in dual KO screen. 
+#' Here, scaled logFCs are used, centering positive controls to -1 and negative controls to 0 (see ccr2.scale_pos_neg).
+#' It can be used to plot results both before and after CRISPRcleanR^2 correction. 
+#' Dual guides with bliss z-score and logFCs passing pre-specified thresholds are stored.
 #'
-#' @return
-#' @export
+#' @param dual_FC A data frame containing information about dual KO logFCs.
+#'        It should have columns 'avgFC_scaled', 'correctedFC_scaled' (see ccr2.scale_pos_neg), and 'bliss_zscore', 
+#'        'bliss_zscore_corrected' (see ccr2.compute_bliss), and 'info'. 
+#' @param corrected Logical, indicating whether to use CRISPRcleanR^2 corrected values for logFC and Bliss Z-score (default is FALSE).
+#' @param THR_FC Numeric, the threshold for logFC below which points will be considered lethal and stored (default is -1).
+#' @param THR_BLISS Numeric, the threshold for Bliss Z-score below which points will be considered synergistic and stored (default is -1).
+#' @param saveToFig Logical, indicating whether to save the plot to a file (default is FALSE).
+#' @param saveFormat Character, the format in which to save the plot (default is "pdf").
+#' @param outdir Character, the directory where the plot file will be saved (default is "./").
+#' @param EXPname Character, an additional name to include in the plot file name (default is "").
+#'
+#' @return A data frame containing dual guide pairs classified as lethal and synergistic based on the specified thresholds. Same structure as input dual_FC data frame.
 #'
 #' @examples
+#' @seealso 
+#' \code{\link{ccr2.compute_bliss}},
+#' \code{\link{ccr2.scale_pos_neg}}
+#' 
+#' @export
 ccr2.plot_bliss_vs_FC <- function(dual_FC, 
                                   corrected = FALSE, 
                                   THR_FC = -1,
@@ -2605,24 +2749,49 @@ ccr2.plot_bliss_vs_FC <- function(dual_FC,
 }
 
 
-#' Title
+#' Run CRISPRcleanR^2 analysis for dual KO screen ("double-cut" pairs).
 #'
-#' @param dual_FC 
-#' @param single_correctedFCs 
-#' @param libraryAnnotation_dual 
-#' @param match_dual_single_seq 
-#' @param EXPname 
-#' @param saveToFig 
-#' @param display 
-#' @param saveFormat 
-#' @param outdir 
-#' @param correctGW 
-#' @param ... 
+#' This function performs a comprehensive CRISPRcleanR^2 analysis in dual KO screen for "double-cut" pairs,
+#' meaning both guides in position1 and position 2 target an existing genomic region. The following steps are performed:
+#' - creation of pseudo single scores from dual KO logFCs, 
+#' - modeling of single KO logFCs vs. pseudo single logFCs for matching guides, 
+#' - injection of data into pseudo single logFCs space from genome-wide single KO screen,
+#' - application of CRISPRcleanR to pseudo-single logFCs (genome-wide from original plus injected data), 
+#' - approximate linear systems with box constraints to obtain pairwise correction from pseudo-single correction.
+#' It returns information such as the maximum and minimum corrections allowed, 
+#' model performance for single VS pseudo-single, 
+#' identified pseudo-single segments and correction, and
+#' final dual logFC data frame with CRISPRcleanR^2 correction.
+#' 
+#' 
+#' @param dual_FC The data frame containing dual KO logFCs (output of ccr2.logFCs2chromPos).
+#' @param single_correctedFCs The data frame containing corrected single KO logFCs already corrected via CRISPRcleanR (output of ccr.run_complete).
+#' @param libraryAnnotation_dual Data frame containing information from the dual library (one row per guide pair).
+#' @param match_dual_single_seq A data frame with one row per sgRNA in dual library (union of position 1 and position 2), including matched single library IDs and sequences (output of ccr2.matchDualandSingleSeq).
+#' @param EXPname A character string specifying the experiment name (default is "").
+#' @param saveToFig Logical, whether to save figures (default is FALSE).
+#' @param display Logical, whether to display figures (default is TRUE).
+#' @param saveFormat The format in which to save figures (default is NULL).
+#' @param outdir The directory to save figures (default is "./").
+#' @param correctGW A character specifying the type of pseudo-single logFCs mean centering after data-injection ("CHR": per chromosome, "GW": genome-wide, or NULL for no centering). See ccr2.injectData.
+#' @param ... Additional parameters to be passed.
 #'
-#' @return
-#' @export
+#' @return A list containing maximum and minimum corrections allowed, model performance and estimated 
+#'         for single VS pseudo-single, identified pseudo-single segments and correction, and final dual logFC data frame with CRISPRcleanR^2 correction.
 #'
 #' @examples
+#' @seealso
+#' \code{\link{ccr2.createPseudoSingle_combine}},
+#' \code{\link{ccr2.modelSingleVSPseudoSingle}},
+#' \code{\link{ccr2.injectData}},
+#' \code{\link{ccr.GWclean}},
+#' \code{\link{ccr2.filterGWclean}},
+#' \code{\link{ccr2.solveLinearSys}},
+#' \code{\link{ccr2.logFCs2chromPos}},
+#' \code{\link{ccr.run_complete}},
+#' \code{\link{ccr2.matchDualandSingleSeq}}
+#'
+#' @export
 ccr2.run <- function(
   dual_FC,
   single_correctedFCs, 
@@ -2661,8 +2830,7 @@ ccr2.run <- function(
   model_guide1 <- ccr2.modelSingleVSPseudoSingle(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA1,
     guide_id = 1, 
-    display = display, 
-    correctGW = correctGW, 
+    display = display,
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
@@ -2672,7 +2840,6 @@ ccr2.run <- function(
     pseudo_single_FC = dual_pseudo_single_FC$sgRNA2,
     guide_id = 2, 
     display = display, 
-    correctGW = correctGW, 
     saveToFig = saveToFig, 
     saveFormat = saveFormat,
     outdir = outdir, 
@@ -2794,23 +2961,48 @@ ccr2.run <- function(
 
 
 
-#' Title
+#' Run CRISPRcleanR^2 analysis for dual KO screen ("non-target" pairs).
 #'
-#' @param dual_FC 
-#' @param single_correctedFCs 
-#' @param libraryAnnotation_dual 
-#' @param match_dual_single_seq 
-#' @param EXPname 
-#' @param saveToFig 
-#' @param display 
-#' @param saveFormat 
-#' @param outdir 
-#' @param correctGW 
+#' This function performs a comprehensive CRISPRcleanR^2 analysis in dual KO screen for "non-target" pairs,
+#' meaning one between the guides in position1 and position 2 is targeting a NON existing genomic-region. 
+#' It consider only guide pairs having a non-target guide and performs the following steps:
+#' - creation of pseudo single scores from dual KO logFCs (only matched with non-targets), 
+#' - modeling of single KO logFCs vs. pseudo single logFCs for matching guides, 
+#' - injection of data into pseudo single logFCs (only matched with non-targets) space from genome-wide single KO screen,
+#' - application of CRISPRcleanR to pseudo-single logFCs (genome-wide from original plus injected data), 
+#' - assignment of dual KO correction based on the correction in the new space.
+#' Differently from \code{\link{ccr2.run}}, there is no need to approximate the linear system to retrieve the correction for dual KO.
+#' Since each guide pair is actually targeting only one genomic-region, we can assign the correction obtained from CRISPRcleanR directly.
+#' It returns information such as the model performance for single VS pseudo-single, identified pseudo-single segments, and
+#' final dual logFC data frame with CRISPRcleanR^2 correction (only for non-target pairs).
 #'
-#' @return
-#' @export
+#' @param dual_FC The data frame containing dual KO logFCs (output of ccr2.logFCs2chromPos).
+#' @param single_correctedFCs The data frame containing corrected single KO logFCs already corrected via CRISPRcleanR (output of ccr.run_complete).
+#' @param libraryAnnotation_dual Data frame containing information from the dual library (one row per guide pair).
+#' @param match_dual_single_seq TA data frame with one row per sgRNA in dual library (union of position 1 and position 2), including matched single library IDs and sequences (output of ccr2.matchDualandSingleSeq).
+#' @param EXPname A character string specifying the experiment name (default is "").
+#' @param saveToFig Logical, whether to save figures (default is FALSE).
+#' @param display Logical, whether to display figures (default is TRUE).
+#' @param saveFormat The format in which to save figures (default is NULL).
+#' @param outdir The directory to save figures (default is "./").
+#' @param correctGW A character specifying the type of pseudo-single logFCs mean centering after data-injection ("CHR": per chromosome, "GW": genome-wide, or NULL for no centering). See ccr2.injectData.
+#' 
+#' @return A list containing model performance and estimated 
+#'         for single VS pseudo-single, identified pseudo-single segments, 
+#'         and final dual logFC data frame with CRISPRcleanR^2 correction.
 #'
 #' @examples
+#' @seealso
+#' \code{\link{ccr2.createPseudoSingle_combine}},
+#' \code{\link{ccr2.modelSingleVSPseudoSingle}},
+#' \code{\link{ccr2.injectData}},
+#' \code{\link{ccr.GWclean}},
+#' \code{\link{ccr2.filterGWclean}},
+#' \code{\link{ccr2.logFCs2chromPos}},
+#' \code{\link{ccr.run_complete}},
+#' \code{\link{ccr2.matchDualandSingleSeq}}
+#'
+#' @export
 ccr2.run_nontarget <- function(
   dual_FC,
   single_correctedFCs, 
@@ -2966,30 +3158,86 @@ ccr2.run_nontarget <- function(
 }
 
 
-#' Title
+#' Run complete CRISPRcleanR^2 analysis for dual screens.
 #'
-#' @param filename_single 
-#' @param min_reads_single 
-#' @param EXPname 
-#' @param libraryAnnotation_single 
-#' @param display 
-#' @param outdir 
-#' @param min_reads 
-#' @param saveToFig 
-#' @param saveFormat 
-#' @param libraryAnnotation_dual 
-#' @param dual_count 
-#' @param dual_logFC 
-#' @param correctGW 
-#' @param excludeGene_plot 
-#' @param CNA 
-#' @param CN_thr 
-#' @param ... 
+#' This function is the complete wrap-up for the entire pipeline, from raw count of both single and dual KO screens to CRISPRcleanR^2 correction, synergy estimation and results visualization.
+#' In particular, this function
+#' - runs CRISPRcleanR pipeline on single KO raw counts (genome-wide) (see \code{\link{ccr.run_complete}}),
+#' - matches single KO and dual KO libraries based on sequence (see \code{\link{ccr2.matchDualandSingleSeq}}),
+#' - pre-processes dual KO screen, converting raw counts into logFCs (if necessary, see \code{\link{ccr2.NormfoldChanges}}), averages logFCs across replicates and annotate sgRNA pairs with chromosomal positions (see \code{\link{ccr2.logFCs2chromPos}}),
+#' - computes singletons (guide pairs matched with non-essential gene or intergenic region) summary statistics to be used in bliss model (see \code{\link{ccr2.get_summary_singletons}}),
+#' - computes dual KO logFCs correction for "non-target" pairs (see \code{\link{ccr2.run_nontarget}}),
+#' - computes dual KO logFCs correction for "double-cuts" dual pairs, targeting two existing genomic regions (see \code{\link{ccr2.run}}),
+#' - combines the results from both non-target and double-cuts pairs,
+#' - computes synergy based on the bliss model for both uncorrected and corrected dual KO logFCs (see \code{\link{ccr2.compute_bliss}}),
+#' - visualize results such as relationship with CNA status (see \code{\link{ccr2.plot_correction}}, \code{\link{ccr2.plotClasses}}, \code{\link{ccr2.plotCNA}}, \code{\link{ccr2.plotCNAdensity}}),
+#' - visualize results for single KO for guides available also in with dual KO library (see \code{\link{ccr2.plotMatchingSingle}}),
+#' - centers logFCs of positive controls to -1 and negative controls to 0 for both uncorrected and corrected logFCs (see \code{\link{ccr2.scale_pos_neg}}),
+#' - selects synergistic and lethal guide pairs based on logFCs threshold -1 and bliss z-score threshold 0.5 (see \code{\link{ccr2.plot_bliss_vs_FC}}), 
+#' - compute logFCs at the gene pair level (median) and repeats the last 2 steps to obtain synergistic and lethal gene pairs.
 #'
-#' @return
-#' @export
+#' @param filename_single A string specifying the path of a tsv file containing the raw sgRNA counts. This must be a tab delimited file with one row per sgRNA and the following columns/headers: 
+#'  - sgRNA: containing alphanumerical identifiers of the sgRNA under consideration;
+#'  - gene: containing HGNC symbols of the genes targeted by the sgRNA under consideration;
+#' followed by the columns containing the sgRNAs' counts for the controls and columns for library trasfected samples.
+#' @param min_reads_single This parameter defines a filter threshold value for sgRNAs, based on their average counts in the control sample. 
+#'  Specifically, it indicates the minimal number of counts that each individual sgRNA needs to have in the controls (on average) in order to be included in the output.
+#' @param libraryAnnotation_single A data frame containing the sgRNA annotations, with a named row for each sgRNA, and columns for targeted genes, genomic coordinates and possibly other information. 
+#' @param min_reads Minimum number of reads required in the control sample (e.g. plasmid) for a pair to be retained (default is 30).
+#' @param libraryAnnotation_dual Data frame containing information from the dual library (one row per guide pair).
+#' @param dual_count Data frame containing the raw counts from dual KO screen, raw counts start from the 9th column. The 9th column include the control raw counts (default is NULL).
+#' @param dual_logFC Data frame containing dual KO log fold changes (default is NULL).
+#' @param EXPname Name of the experiment.
+#' @param display Logical, whether to display plots (default is FALSE).
+#' @param outdir Directory to save the output files (default is "./").
+#' @param saveToFig Logical, whether to save figures.
+#' @param saveFormat File format for saving figures (default is "pdf").
+#' @param correctGW A character specifying the type of pseudo-single logFCs mean centering after data-injection ("CHR": per chromosome, "GW": genome-wide, or NULL for no centering). Default is NULL. #TODO: USED FOR TESTING, REMOVE!
+#' @param excludeGene Character vector, genes to be excluded from dual_FC_correctedFC (default is NULL).
+#' @param CNA A data frame containing copy number alteration information. It must include the following columns:
+#'  - CHROM: chromosome id in "chri" format   
+#'  - start: start of the CN region, genomic location in base pair
+#'  - end: end of the CN region, genomic location in base pair
+#'  - C: copy number (absolute) value 
+#' @param CN_thr Numeric (absolute), a threshold for defining extreme CNA.
+#' @param ... Additional parameters to be passed to other functions.
+#'
+#' @return A list containing:
+#'  - dual: data frame of dual KO logFCs including CRISPRcleanR^2 corrected values, bliss z-score synergy, scaled logFCs per positive and negative controls (one row per guide pair),
+#'  - dual_gene: data frame same as dual but at the gene pair level (scores collapsed using median),
+#'  - single_gw: data frame of single KO logFCs including CRISPRcleanR corrected values at the genome-wide level,
+#'  - single: data frame of single KO logFCs including CRISPRcleanR corrected values only for those sgRNAs also present in dual KO library,
+#'  - pseudo_single_segments: identified genomic regions (segments) by CRISPRcleanR applied to pseudo single logFCs,
+#'  - system_solition: data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides (both positions), it also includes the fitted pseudo-single correction obtained as system solution,
+#'  - model_perf:  model performance for single VS pseudo-single, including both double-cut pairs and non-target pairs,
+#'  - model_est: model estimates (coefficients) for single VS pseudo-single, including both double-cut pairs and non-target pairs,
+#'  - top_corrected: using CRISPRcleanR^2 corrected results, dual guide pairs classified as lethal and synergistic based on scaled logFCS < -1 and bliss z-score < -0.5,
+#'  - top_gene_corrected: using CRISPRcleanR^2 corrected results, dual gene pairs classified as lethal and synergistic based on scaled logFCS < -1 and bliss z-score < -0.5,
+#'  - top_uncorrected: using uncorrected (original) results, dual guide pairs classified as lethal and synergistic based on scaled logFCS < -1 and bliss z-score < -0.5,
+#'  - top_gene_uncorrected: using uncorrected (original) results, dual gene pairs classified as lethal and synergistic based on scaled logFCS < -1 and bliss z-score < -0.5,
+#'  - max_correction: maximum dual correction allowed based on single KO correction (used as upper bound for the optimization problem solution).,
+#'  - min_correction: minimum dual correction allowed based on single KO correction (used as upper bound for the optimization problem solution).
 #'
 #' @examples
+#' @seealso
+#' \code{\link{ccr.run_complete}},
+#' \code{\link{ccr2.matchDualandSingleSeq}},
+#' \code{\link{ccr2.NormfoldChanges}},
+#' \code{\link{ccr2.logFCs2chromPos}},
+#' \code{\link{ccr2.get_summary_singletons}},
+#' \code{\link{ccr2.match_singletons_singleFC}},
+#' \code{\link{ccr2.run_nontarget}},
+#' \code{\link{ccr2.run}},
+#' \code{\link{ccr2.compute_bliss}},
+#' \code{\link{ccr2.plot_correction}},
+#' \code{\link{ccr2.plotClasses}},
+#' \code{\link{ccr2.plotCNA}},
+#' \code{\link{ccr2.plotCNAdensity}},
+#' \code{\link{ccr2.plotMatchingSingle}},
+#' \code{\link{ccr2.scale_pos_neg}},
+#' \code{\link{ccr2.plot_bliss_vs_FC}}
+#' 
+#' @export
 ccr2.run_complete <- function(
   filename_single, 
   min_reads_single = 30,
@@ -3259,6 +3507,26 @@ ccr2.run_complete <- function(
   dual_FC_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_correctedFC, 
                                             corrected = TRUE)
   
+  # plot bliss vs avgFC
+  top_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
+                                         corrected = TRUE, 
+                                         THR_FC = -1, 
+                                         THR_BLISS = -0.5,
+                                         EXPname = EXPname, 
+                                         saveToFig = saveToFig, 
+                                         saveFormat = saveFormat,
+                                         outdir = outdir)
+  
+  top_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
+                                           corrected = FALSE, 
+                                           THR_FC = -1, 
+                                           THR_BLISS = -0.5,
+                                           EXPname = EXPname, 
+                                           saveToFig = saveToFig, 
+                                           saveFormat = saveFormat,
+                                           outdir = outdir)
+  
+  
   # get gene level
   dual_FC_gene_correctedFC <- dual_FC_correctedFC %>%
     dplyr::group_by(Gene_Pair) %>%
@@ -3286,17 +3554,7 @@ ccr2.run_complete <- function(
   dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC)
   dual_FC_gene_correctedFC <- ccr2.scale_pos_neg(dual_FC = dual_FC_gene_correctedFC, 
                                                  corrected = TRUE)
-  
   # plot bliss vs avgFC
-  top_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
-                                         corrected = TRUE, 
-                                         THR_FC = -1, 
-                                         THR_BLISS = -0.5,
-                                         EXPname = EXPname, 
-                                         saveToFig = saveToFig, 
-                                         saveFormat = saveFormat,
-                                         outdir = outdir)
-  
   top_gene_corrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC,
                                              corrected = TRUE, 
                                              THR_FC = -1, 
@@ -3305,15 +3563,6 @@ ccr2.run_complete <- function(
                                              saveToFig = saveToFig, 
                                              saveFormat = saveFormat,
                                              outdir = sprintf("%sGENELEVEL_", outdir))
-  
-  top_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_correctedFC, 
-                                           corrected = FALSE, 
-                                           THR_FC = -1, 
-                                           THR_BLISS = -0.5,
-                                           EXPname = EXPname, 
-                                           saveToFig = saveToFig, 
-                                           saveFormat = saveFormat,
-                                           outdir = outdir)
   
   top_gene_uncorrected <- ccr2.plot_bliss_vs_FC(dual_FC = dual_FC_gene_correctedFC, 
                                               THR_FC = -1, 
@@ -3341,19 +3590,32 @@ ccr2.run_complete <- function(
   
 }
 
-#' Title
+#' Get Pairwise Correction approximating linear system based on pseudo-single construction.
 #'
-#' @param matrix_interactions 
-#' @param combinations 
-#' @param dual_FC 
-#' @param pseudo_single_p1 
-#' @param pseudo_single_p2 
-#' @param max_corr
-#' @param min_corr 
+#' This function calculates pairwise correction using a system solver.
+#' The correction is found as the optimal solution of a convex problem (approximation of the linear system) with constraints on the solution (maximum correction and minimum correction allowed).
+#' The CVXR package is used with default solver OSQP.
+#' The function creates a sparse matrix representing the system of equations,
+#' solves the problem approximating linear system solution with constraints, and returns the pairwise correction. 
+#' NOTE: the box constraints prevent the solution from "exploding" introducing highly negative correction and hence false positives (avoid induced highly lethal pairs). 
 #'
-#' @return
+#' @param matrix_interactions matrix with logical entries, rows = sgRNAs in position 1 and cols =  sgRNAs in position 2. Each entry indicates if the pair sgRNA pos1 ~ sgRNA pos 2 exists in the given dual KO dataset.
+#' @param combinations matrix with same size as matrix_interactions. Each entry is a character formed by sgRNA pos 1 ~ sgRNA pos 2 expliciting the guide pair combination (it could not exist in dual KO screen).
+#' @param dual_FC Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column).
+#' @param pseudo_single_p1 Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides in position 1 (output of \code{\link{ccr2.filterGWclean}}).
+#' @param pseudo_single_p2 Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides in position 2 (output of \code{\link{ccr2.filterGWclean}}).
+#' @param max_corr maximum dual correction allowed based on single KO correction (used as upper bound for the solution).
+#' @param min_corr minimum dual correction allowed based on single KO correction (used as upper bound for the solution).
 #'
+#' @return A list containing 
+#'  - sys_solution: system solution by the chosen solver (OSQP solver from CVXR),
+#'  - df_corr: data frame of sgRNA ID pair and pairwise correction, 
+#'  - pseudo_single_correction: Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides (both positions), it also includes the fitted pseudo-single correction obtained as system solution.
+#' 
 #' @examples
+#' @export
+#' @seealso 
+#' \code{\link{ccr2.solveLinearSys}}
 get_pairwise_correction <- function(matrix_interactions, 
                                     combinations, 
                                     dual_FC, 
@@ -3418,6 +3680,7 @@ get_pairwise_correction <- function(matrix_interactions,
   print(paste("The solver used is", sys_solution$solver))
   print(paste("Problem solved in", sys_solution$solve_time, "sec"))
   
+  # TODO: removed tested methods
   # # try with glmnet
   # time_solve <- system.time(sys_solution <- glmnet(
   #   x = matrix_sys, 
@@ -3430,7 +3693,6 @@ get_pairwise_correction <- function(matrix_interactions,
   # )
   # print(sprintf("system solved after: %.2fs", time_solve[3]))
   # correction_pair <- as.vector(sys_solution$beta[,1])
-  
   # # try vith bvls
   # time_solve <- system.time(sys_solution <- bvls::bvls(
   #            as.matrix(matrix_sys), 
@@ -3440,7 +3702,6 @@ get_pairwise_correction <- function(matrix_interactions,
   # )
   #print(sprintf("system solved after: %.2fs", time_solve[3]))
   #correction_pair <- sys_solution$x
-  
   # # try with nnls
   # a <- Matrix::crossprod(matrix_sys)
   # b <- Matrix::crossprod(matrix_sys, correction_vect)
@@ -3452,7 +3713,6 @@ get_pairwise_correction <- function(matrix_interactions,
   # )
   # print(sprintf("system solved after: %.2fs", time_solve[3]))
   # correction_pair <- sys_solution
-  
   # try with lsei
   # time_solve <- system.time(sys_solution <- limSolve::lsei(
   #   A = matrix_sys, 
@@ -3462,7 +3722,6 @@ get_pairwise_correction <- function(matrix_interactions,
   # )
   # print(sprintf("system solved after: %.2fs", time_solve[3]))
   # correction_pair <- sys_solution$X
-  
   # # try with nnls
   # time_solve <- system.time(sys_solution <- nnls::nnls(
   #   matrix_sys, correction_vect
@@ -3470,9 +3729,8 @@ get_pairwise_correction <- function(matrix_interactions,
   # )
   # print(sprintf("system solved after: %.2fs", time_solve[3]))
   # correction_pair <- sys_solution$x
-  
   # use moore-penrose approximation
-  # time_solve <- system.time(correction_pair <- solve_system_fun(
+  # time_solve <- system.time(correction_pair <- solve_system_fun( # function removed, if interested check v.0.5.1)
   #   matrix_sys = matrix_sys,
   #   b_coeff = correction_vect)
   # )
@@ -3516,38 +3774,3 @@ get_pairwise_correction <- function(matrix_interactions,
   
 }
 
-
-#' Title
-#'
-#' @param matrix_sys 
-#' @param b_coeff 
-#'
-#' @return
-#'
-#' @examples
-solve_system_fun <- function(matrix_sys, b_coeff){
-  
-  rank_mat <- Matrix::rankMatrix(matrix_sys, method = "qr.R") # if necessary
-  Xsvd <- RSpectra::svds(A = matrix_sys, k = rank_mat[1])
-  # Xsvd <- sparsesvd::sparsesvd(matrix_sys)
-  
-  Positive <- Xsvd$d > max(sqrt(.Machine$double.eps) * Xsvd$d[1L], 0)
-  if (all(Positive)) {
-    U <- Xsvd$u
-    V <- Xsvd$v
-    D <- Xsvd$d
-  }else{
-    if (!any(Positive)) {
-        stop("SVD decomposition of system matrix failed")
-    }else{
-      U <- Xsvd$u[, Positive, drop = FALSE]
-      V <- Xsvd$v[, Positive, drop = FALSE]
-      D <- Xsvd$d[Positive]
-    }
-  }
-  
-  tmp <- 1/D * as.vector(t(U) %*% b_coeff) # faster than element-wise multiplication 
-  solution_sys <- V %*% tmp
-
-  return(solution_sys)
-}

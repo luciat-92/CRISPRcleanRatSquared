@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.plotMatchingSingle}
 \alias{ccr2.plotMatchingSingle}
-\title{Title}
+\title{Plot Copy Number Alteration (CNA) information for single KO data considering only guides matching with dual KO data, before and after CRISPRcleanR correction.}
 \usage{
 ccr2.plotMatchingSingle(
   dual_FC_correctedFC,
@@ -16,25 +16,32 @@ ccr2.plotMatchingSingle(
 )
 }
 \arguments{
-\item{dual_FC_correctedFC}{}
+\item{dual_FC_correctedFC}{A data frame containing CRISPRcleanR^2 corrected logFCs for dual KO.}
 
-\item{match_dual_single_seq}{}
+\item{match_dual_single_seq}{Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).}
 
-\item{single_correctedFCs}{}
+\item{single_correctedFCs}{Data frame containing single screen data with CRISPRcleanR corrected logFC.}
 
-\item{CNA}{}
+\item{CNA}{A data frame containing copy number alteration information.}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, whether to save the plots to files (default is FALSE).}
 
-\item{saveFormat}{}
+\item{saveFormat}{Character, the format for saving the plots (default is "pdf").}
 
-\item{outdir}{}
+\item{outdir}{Character, the directory path for saving the plots (default is "./").}
 
-\item{EXPname}{}
+\item{EXPname}{Character, an identifier for the experiment (default is "").}
 }
 \value{
-
+A data frame containing single screen data for matching guides in dual screen data with annotated copy number information.
 }
 \description{
-plot: before and after correction of matching single dual gene
+This function creates two plots:
+\enumerate{
+\item A boxplot showing the distribution of logFC for single KO guides in common with dual screen, stratified by copy number (CN).
+\item A scatter plot comparing uncorrected logFC with corrected logFC for single KO guides in common with dual screen.
+}
+}
+\seealso{
+\code{\link{ccr2.add_CNA}}
 }

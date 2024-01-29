@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.plotCNAdensity}
 \alias{ccr2.plotCNAdensity}
-\title{Title}
+\title{Plot density of dual KO logFCs, separating for extreme Copy Number Alteration (CNA) events.}
 \usage{
 ccr2.plotCNAdensity(
   dual_FC_correctedFC,
@@ -17,27 +17,29 @@ ccr2.plotCNAdensity(
 )
 }
 \arguments{
-\item{dual_FC_correctedFC}{}
+\item{dual_FC_correctedFC}{A data frame containing CRISPRcleanR^2 corrected logFCs for dual KO.}
 
-\item{CNA}{}
+\item{CNA}{A data frame containing copy number alteration information.}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, indicating whether to save the plots to files (default is FALSE).}
 
-\item{saveFormat}{}
+\item{saveFormat}{Character, the format for saving the plots (default is "pdf").}
 
-\item{outdir}{}
+\item{outdir}{Character, the directory to save the plots (default is "./").}
 
-\item{EXPname}{}
+\item{EXPname}{Character, a prefix to add to the saved plot filenames (default is "").}
 
-\item{excludeGene}{}
+\item{excludeGene}{Character vector, genes to be excluded from dual_FC_correctedFC (default is NULL).}
 
-\item{CN_thr}{}
+\item{CN_thr}{Numeric (absolute), a threshold for defining extreme CNA.}
 
-\item{var_to_plot}{}
-}
-\value{
-
+\item{var_to_plot}{Character, the variable to plot. If "observed" (default), plots logFCs. Otherwise a user-defined variable, such as bliss z-scores.}
 }
 \description{
-plot: density divided per max CNA threshold
+This function creates density plots to visualize the distribution of dual KO logFCs
+separating for extreme CNA (higher than a certain threshold). The density is shown before and after CRISRPcleanR^2 correction.
+It provides insights into how CNAs may influence the logFC distribution.
+}
+\seealso{
+\code{\link{ccr2.add_CNA}}
 }

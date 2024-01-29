@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.injectData}
 \alias{ccr2.injectData}
-\title{Title}
+\title{Inject data from single KO space to pseudo-single space (for a specific guide position) at the genome-wide level}
 \usage{
 ccr2.injectData(
   model_single_to_pseudo,
@@ -13,19 +13,22 @@ ccr2.injectData(
 )
 }
 \arguments{
-\item{model_single_to_pseudo}{}
+\item{model_single_to_pseudo}{Fitted model object representing the relationship between single and pseudo-single logFCs (output of ccr2.modelSingleVSPseudoSingle).}
 
-\item{pseudo_single_FC}{}
+\item{pseudo_single_FC}{Data frame containing logFCs for pseudo-single guides and logFCs for single KO in matching guides (output of ccr2.createPseudoSingle_combine).}
 
-\item{single_FC}{}
+\item{single_FC}{Data frame containing logFCs for single KO.}
 
-\item{guide_id}{}
+\item{guide_id}{Identifier for the guide position (1 or 2).}
 
-\item{correctGW}{}
+\item{correctGW}{A character specifying the type of pseudo-single logFCs mean centering after data-injection ("CHR": per chromosome, "GW": genome-wide, or NULL for no centering). Default is NULL. #TODO: USED FOR TESTING, REMOVE!}
 }
 \value{
-
+A data frame containing information for pseudo-single guides with injected values.
 }
 \description{
-Title
+This function predicts pseudo-single logFCs values at the genome-wide level
+based on the model fitted to the relationship between matching pseudo-single and single guides.
+The predicted values are filling the genome-wide space based on single KO guides (data injection).
+The actual pseudo-single guides instead of the predicted ones are used where available.
 }

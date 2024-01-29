@@ -2,23 +2,26 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.createPseudoSingle}
 \alias{ccr2.createPseudoSingle}
-\title{Title}
+\title{Create pseudo-single logFCs from dual KO logFCs in CRISPRcleanR^2 analysis}
 \usage{
 ccr2.createPseudoSingle(dual_FC, single_FC, match_dual_single_seq, guide_id)
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column)}
 
-\item{single_FC}{}
+\item{single_FC}{Data frame with single KO logFCs.}
 
-\item{match_dual_single_seq}{}
+\item{match_dual_single_seq}{Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).}
 
-\item{guide_id}{}
+\item{guide_id}{Identifier for the sgRNA position to be considered (1 or 2).}
 }
 \value{
-
+A data frame containing details about the sgRNAs, their genomic locations,
+and log fold changes from both the pseudo single and the single KO, if the sgRNA sequence matches (if not replaced by NAs).
 }
 \description{
-psuedo single avgFC via mean for each gene in guide1 or guide2 across all the other genes
-store also number of genes from which mean is computed
+This function creates pseudo-single logFCs from dual KO logFCs. Considering a sgRNA in position i (1 or 2),
+it assign the pseudo single value as the average logFC across all the dual guide pairs having that sgRNA in position i.
+The resulting data frame contains details about the sgRNAs, their genomic locations,
+and log fold changes from both the pseudo single and the single KO, if the sgRNA sequence matches (if not replaced by NAs)
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{get_pairwise_correction}
 \alias{get_pairwise_correction}
-\title{Title}
+\title{Get Pairwise Correction approximating linear system based on pseudo-single construction.}
 \usage{
 get_pairwise_correction(
   matrix_interactions,
@@ -15,21 +15,36 @@ get_pairwise_correction(
 )
 }
 \arguments{
-\item{matrix_interactions}{}
+\item{matrix_interactions}{matrix with logical entries, rows = sgRNAs in position 1 and cols =  sgRNAs in position 2. Each entry indicates if the pair sgRNA pos1 ~ sgRNA pos 2 exists in the given dual KO dataset.}
 
-\item{combinations}{}
+\item{combinations}{matrix with same size as matrix_interactions. Each entry is a character formed by sgRNA pos 1 ~ sgRNA pos 2 expliciting the guide pair combination (it could not exist in dual KO screen).}
 
-\item{dual_FC}{}
+\item{dual_FC}{Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column).}
 
-\item{pseudo_single_p1}{}
+\item{pseudo_single_p1}{Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides in position 1 (output of \code{\link{ccr2.filterGWclean}}).}
 
-\item{pseudo_single_p2}{}
+\item{pseudo_single_p2}{Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides in position 2 (output of \code{\link{ccr2.filterGWclean}}).}
 
-\item{min_corr}{}
+\item{max_corr}{maximum dual correction allowed based on single KO correction (used as upper bound for the solution).}
+
+\item{min_corr}{minimum dual correction allowed based on single KO correction (used as upper bound for the solution).}
 }
 \value{
-
+A list containing
+\itemize{
+\item sys_solution: system solution by the chosen solver (OSQP solver from CVXR),
+\item df_corr: data frame of sgRNA ID pair and pairwise correction,
+\item pseudo_single_correction: Data frame containing CRISPRcleanR corrected logFCs for pseudo-single guides (both positions), it also includes the fitted pseudo-single correction obtained as system solution.
+}
 }
 \description{
-Title
+This function calculates pairwise correction using a system solver.
+The correction is found as the optimal solution of a convex problem (approximation of the linear system) with constraints on the solution (maximum correction and minimum correction allowed).
+The CVXR package is used with default solver OSQP.
+The function creates a sparse matrix representing the system of equations,
+solves the problem approximating linear system solution with constraints, and returns the pairwise correction.
+NOTE: the box constraints prevent the solution from "exploding" introducing highly negative correction and hence false positives (avoid induced highly lethal pairs).
+}
+\seealso{
+\code{\link{ccr2.solveLinearSys}}
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.createPseudoSingle_combine}
 \alias{ccr2.createPseudoSingle_combine}
-\title{Title}
+\title{Create pseudo-single logFCs from dual KO logFCs in CRISPRcleanR^2 analysis for both positions}
 \usage{
 ccr2.createPseudoSingle_combine(
   dual_FC,
@@ -16,25 +16,25 @@ ccr2.createPseudoSingle_combine(
 )
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{Data frame with dual KO logFCs (already averaged per replications, logFCs stored in "avgFC" column).}
 
-\item{single_FC}{}
+\item{single_FC}{Data frame with single KO logFCs.}
 
-\item{match_dual_single_seq}{}
+\item{match_dual_single_seq}{Data frame containing matched sequences between the dual and single libraries (output of ccr2.matchDualandSingleSeq).}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical indicating whether to save the plot to a file.}
 
-\item{display}{}
+\item{display}{Logical indicating whether to display the plot.}
 
-\item{saveFormat}{}
+\item{saveFormat}{The format in which to save the plot (e.g., "png", "pdf"). Default is NULL.}
 
-\item{EXPname}{}
+\item{EXPname}{Name for the experiment. Default is an empty string.}
 
-\item{outdir}{}
+\item{outdir}{Directory where the plot file will be saved. Default is "./".}
 }
 \value{
-
+A list containing data frames for pseudo-single guides in position 1 (\code{sgRNA1}) and position 2 (\code{sgRNA2}).
 }
 \description{
-Title
+This function creates pseudo-single logFCs from dual KO logFCs, both for position 1 and position 2 (see ccr2.createPseudoSingle)
 }

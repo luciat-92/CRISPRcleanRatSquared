@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.match_singletons_singleFC}
 \alias{ccr2.match_singletons_singleFC}
-\title{Title}
+\title{Match single KO data with singletons and generate comparison plot}
 \usage{
 ccr2.match_singletons_singleFC(
   match_dual_single_seq,
@@ -16,25 +16,26 @@ ccr2.match_singletons_singleFC(
 )
 }
 \arguments{
-\item{match_dual_single_seq}{}
+\item{match_dual_single_seq}{Data frame containing the matching information between sgRNA in dual KO and single KO libraries (output of ccr2.matchDualandSingleSeq).}
 
-\item{single_FC}{}
+\item{single_FC}{Data frame containing single KO fold changes.}
 
-\item{singletons_summary_FC}{}
+\item{singletons_summary_FC}{List of 2 data frames with summary statistics for singletons from dual KO (output of ccr2.get_summary_singletons).}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, indicating whether to save the comparison plot as a figure (default is FALSE).}
 
-\item{display}{}
+\item{display}{Logical, indicating whether to display the comparison plot (default is TRUE).}
 
-\item{saveFormat}{}
+\item{saveFormat}{If saveToFig is TRUE, the format in which to save the figure (e.g., "png", "pdf", "jpeg").}
 
-\item{EXPname}{}
+\item{EXPname}{Name of the experiment.}
 
-\item{outdir}{}
+\item{outdir}{Output directory for storing results (default is "./").}
 }
 \value{
-
+A data frame containing matched information between single KO data and singletons by gene name.
 }
 \description{
-Title
+This function matches single KO data with singletons median results from dual KO (output of ccr2.get_summary_singletons)
+and generates a comparison plot between single KO fold changes (FC) and median FC of singletons for the paired genes.
 }

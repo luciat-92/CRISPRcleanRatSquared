@@ -1,7 +1,7 @@
 Package: CRISPRcleanRatSquared
 Title: Unsupervised Correction of Gene Independent Cell Responses in dual 
   CRISPR-Cas9 screenings
-Version: 0.5.1
+Version: 0.6.0
 Authors@R: 
   person("Lucia", "Trastulla", email = "lucia.trastulla@fht.org", role = c("aut", "cre"), 
     comment = c(ORCID = "0000-0001-8749-475X"))

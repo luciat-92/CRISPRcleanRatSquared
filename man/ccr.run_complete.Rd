@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr.run_complete}
 \alias{ccr.run_complete}
-\title{Title}
+\title{Run complete CRISPRCleanR analysis on genome-wide CRISPR-cas9 single KO}
 \usage{
 ccr.run_complete(
   filename_single,
@@ -14,21 +14,33 @@ ccr.run_complete(
 )
 }
 \arguments{
-\item{filename_single}{}
+\item{filename_single}{A string specifying the path of a tsv file containing the raw sgRNA counts. This must be a tab delimited file with one row per sgRNA and the following columns/headers:
+\itemize{
+\item sgRNA: containing alphanumerical identifiers of the sgRNA under consideration;
+\item gene: containing HGNC symbols of the genes targeted by the sgRNA under consideration;
+followed by the columns containing the sgRNAs' counts for the controls and columns for library trasfected samples.
+}}
 
-\item{min_reads_single}{}
+\item{min_reads_single}{This parameter defines a filter threshold value for sgRNAs, based on their average counts in the control sample.
+Specifically, it indicates the minimal number of counts that each individual sgRNA needs to have in the controls (on average) in order to be included in the output.}
 
-\item{EXPname}{}
+\item{EXPname}{A string specifying the name of the experiment.}
 
-\item{libraryAnnotation_single}{}
+\item{libraryAnnotation_single}{A data frame containing the sgRNA annotations, with a named row for each sgRNA, and columns for targeted genes, genomic coordinates and possibly other information.}
 
-\item{display}{}
+\item{display}{A logic value specifying whether figures containing boxplots with the count values pre/post normalisation and log fold-changes should be visualised (deafult is FALSE).}
 
-\item{outdir}{}
+\item{outdir}{Output directory for storing results (default is "./").}
 }
 \value{
-
+A list containing the following components:
+\itemize{
+\item FC: Data frame containing corrected log fold changes
+\item segment: Data frame with segmented results
+\item library: Updated library annotation
+}
 }
 \description{
-Title
+This function performs a complete analysis using CRISPRcleanR on genome-wide CRISPR-cas9 KO data
+It includes normalization, fold change computation and CRISPRcleanR correction.
 }

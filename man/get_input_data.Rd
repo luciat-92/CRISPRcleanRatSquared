@@ -11,14 +11,14 @@ get_input_data(param_file = NULL, param_list = NULL)
 second the file location. Can include multiple files that contain the name
 count or library BUT the length must coincide.}
 
-\item{param_list}{}
+\item{param_list}{list with input files' location to be passed. The names in the list must include count1_file, library1_file and copy_number_file}
 }
 \value{
 a list
 \itemize{
 \item CNA: copy number, one row per gene
-\item count:  dual KO count, one row per guides combination
-\item library: metadata for dual KO library
+\item count: list of dual KO count (per batch), one row per guides combination
+\item library: list of metadata for dual KO library (per batch)
 \item CL_name: cell line name
 \item out_fold: location to store results
 }
@@ -26,6 +26,6 @@ a list
 \description{
 get_input_data() load files as indicated in param_file or param_list.
 Must include count1_file, library1_file and copy_number_file.
-Multiple count and library files can be passed (increasing index order).
+Multiple count and library files can be passed (increasing index order). The output will keep separately the batches
 Additional used inputs are input_fold and out_fold (default = "./") and CL_name (default = "./")
 }

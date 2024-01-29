@@ -2,18 +2,20 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{match_dual_to_single}
 \alias{match_dual_to_single}
-\title{Title}
+\title{Match dual library sequence to single library sequences}
 \usage{
 match_dual_to_single(dual_seq, single_library_seq)
 }
 \arguments{
-\item{dual_seq}{}
+\item{dual_seq}{Data frame with one row containing the sequence information from the dual library.}
 
-\item{single_library_seq}{}
+\item{single_library_seq}{Data frame containing the sequence information from the single library for all sgRNA in the library.}
 }
 \value{
-
+A named logical vector indicating matches between the single library sequences and the one dual library sequence.
+The names of the vector represent the CHR_GENES_SEQ values from the single library, and the values are logical indicating matches.
 }
 \description{
-Title
+This function matches a sequence from a dual KO library to sequences in a single KO library based on chromosome and sequence.
+It matches one sequence in dual KO per time
 }

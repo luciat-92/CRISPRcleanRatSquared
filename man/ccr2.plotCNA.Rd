@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.plotCNA}
 \alias{ccr2.plotCNA}
-\title{Title}
+\title{Plot Copy Number Alteration (CNA) information for dual KO data before and after CRISPRcleanr^2 correction.}
 \usage{
 ccr2.plotCNA(
   dual_FC_correctedFC,
@@ -16,25 +16,27 @@ ccr2.plotCNA(
 )
 }
 \arguments{
-\item{dual_FC_correctedFC}{}
+\item{dual_FC_correctedFC}{A data frame containing CRISPRcleanR^2 corrected logFCs for dual KO.}
 
-\item{CNA}{}
+\item{CNA}{A data frame containing copy number alteration information.}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, indicating whether to save the plots to files (default is FALSE).}
 
-\item{saveFormat}{}
+\item{saveFormat}{Character, the format for saving the plots (default is "pdf").}
 
-\item{outdir}{}
+\item{outdir}{Character, the directory to save the plots (default is "./").}
 
-\item{EXPname}{}
+\item{EXPname}{Character, a prefix to add to the saved plot filenames (default is "").}
 
-\item{excludeGene}{}
+\item{excludeGene}{Character vector, genes to be excluded from dual_FC_correctedFC (default is NULL).}
 
-\item{var_to_plot}{}
-}
-\value{
-
+\item{var_to_plot}{Character, the variable to plot. If "observed" (default), plots logFCs. Otherwise a user-defined variable, such as bliss z-scores.}
 }
 \description{
-plot: distribution with respect to CN
+This function creates boxplots to visualize the relationship between CNA and dual KO logFCs.
+It outputs two types of boxplots: the first plots the Maximum CNA between position 1 and position 2 versus logFCs
+It provides insights into how CNAs configurations may affect the logFC of dual guides.
+}
+\seealso{
+\code{\link{ccr2.add_CNA}}
 }

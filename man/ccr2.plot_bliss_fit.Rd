@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.plot_bliss_fit}
 \alias{ccr2.plot_bliss_fit}
-\title{Title}
+\title{Plot Bliss fit for expected vs observed dual KO logFC.}
 \usage{
 ccr2.plot_bliss_fit(
   dual_FC,
@@ -13,19 +13,20 @@ ccr2.plot_bliss_fit(
 )
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{A data frame containing information about dual KO logFCs, with observed and expected logFCs in dual guide pairs based on bliss model (output of ccr2.compute_bliss).}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, indicating whether to save the plot to a file .}
 
-\item{saveFormat}{}
+\item{saveFormat}{Character, the format in which to save the plot (default is "pdf", NOTE: the generated output will be heavy in size).}
 
-\item{outdir}{}
+\item{outdir}{Character, the directory where the plot file will be saved (default is "./").}
 
-\item{EXPname}{}
-}
-\value{
-
+\item{EXPname}{Character, an additional name to include in the plot file name (default is "").}
 }
 \description{
-Title
+This function generates a scatter plot comparing expected vs observed logFC in dual KO.
+Two plots are shown, one before and one after CRISPRcleanR^2 correction.
+}
+\seealso{
+\code{\link{ccr2.compute_bliss}}
 }

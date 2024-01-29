@@ -2,18 +2,23 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.scale_pos_neg}
 \alias{ccr2.scale_pos_neg}
-\title{Title}
+\title{Scale fold changes based on positive and negative controls in dual KO screens
+This function scales fold changes in a dual KO screens based on the median values of positive and negative controls.
+It calculates a scaled version of fold changes, making them such that negative controls are centered at 0 and positive controls at 1.}
 \usage{
 ccr2.scale_pos_neg(dual_FC, corrected = FALSE)
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{Data frame containing dual KO log fold changes.}
 
-\item{corrected}{}
+\item{corrected}{Logical, indicating whether to use corrected fold changes (default is FALSE).}
 }
 \value{
-
+A data frame with scaled fold changes, where each fold change is centered around the median value of negative controls.
+If \code{corrected} is TRUE, the resulting data frame includes a column named \code{correctedFC_scaled}; otherwise, it includes \code{avgFC_scaled}.
 }
 \description{
-Title
+Scale fold changes based on positive and negative controls in dual KO screens
+This function scales fold changes in a dual KO screens based on the median values of positive and negative controls.
+It calculates a scaled version of fold changes, making them such that negative controls are centered at 0 and positive controls at 1.
 }

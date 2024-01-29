@@ -2,7 +2,7 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.run_nontarget}
 \alias{ccr2.run_nontarget}
-\title{Title}
+\title{Run CRISPRcleanR^2 analysis for dual KO screen ("non-target" pairs).}
 \usage{
 ccr2.run_nontarget(
   dual_FC,
@@ -18,29 +18,54 @@ ccr2.run_nontarget(
 )
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{The data frame containing dual KO logFCs (output of ccr2.logFCs2chromPos).}
 
-\item{single_correctedFCs}{}
+\item{single_correctedFCs}{The data frame containing corrected single KO logFCs already corrected via CRISPRcleanR (output of ccr.run_complete).}
 
-\item{libraryAnnotation_dual}{}
+\item{libraryAnnotation_dual}{Data frame containing information from the dual library (one row per guide pair).}
 
-\item{match_dual_single_seq}{}
+\item{match_dual_single_seq}{TA data frame with one row per sgRNA in dual library (union of position 1 and position 2), including matched single library IDs and sequences (output of ccr2.matchDualandSingleSeq).}
 
-\item{EXPname}{}
+\item{EXPname}{A character string specifying the experiment name (default is "").}
 
-\item{saveToFig}{}
+\item{saveToFig}{Logical, whether to save figures (default is FALSE).}
 
-\item{display}{}
+\item{display}{Logical, whether to display figures (default is TRUE).}
 
-\item{saveFormat}{}
+\item{saveFormat}{The format in which to save figures (default is NULL).}
 
-\item{outdir}{}
+\item{outdir}{The directory to save figures (default is "./").}
 
-\item{correctGW}{}
+\item{correctGW}{A character specifying the type of pseudo-single logFCs mean centering after data-injection ("CHR": per chromosome, "GW": genome-wide, or NULL for no centering). See ccr2.injectData.}
 }
 \value{
-
+A list containing model performance and estimated
+for single VS pseudo-single, identified pseudo-single segments,
+and final dual logFC data frame with CRISPRcleanR^2 correction.
 }
 \description{
-Title
+This function performs a comprehensive CRISPRcleanR^2 analysis in dual KO screen for "non-target" pairs,
+meaning one between the guides in position1 and position 2 is targeting a NON existing genomic-region.
+It consider only guide pairs having a non-target guide and performs the following steps:
+\itemize{
+\item creation of pseudo single scores from dual KO logFCs (only matched with non-targets),
+\item modeling of single KO logFCs vs. pseudo single logFCs for matching guides,
+\item injection of data into pseudo single logFCs (only matched with non-targets) space from genome-wide single KO screen,
+\item application of CRISPRcleanR to pseudo-single logFCs (genome-wide from original plus injected data),
+\item assignment of dual KO correction based on the correction in the new space.
+Differently from \code{\link{ccr2.run}}, there is no need to approximate the linear system to retrieve the correction for dual KO.
+Since each guide pair is actually targeting only one genomic-region, we can assign the correction obtained from CRISPRcleanR directly.
+It returns information such as the model performance for single VS pseudo-single, identified pseudo-single segments, and
+final dual logFC data frame with CRISPRcleanR^2 correction (only for non-target pairs).
+}
+}
+\seealso{
+\code{\link{ccr2.createPseudoSingle_combine}},
+\code{\link{ccr2.modelSingleVSPseudoSingle}},
+\code{\link{ccr2.injectData}},
+\code{\link{ccr.GWclean}},
+\code{\link{ccr2.filterGWclean}},
+\code{\link{ccr2.logFCs2chromPos}},
+\code{\link{ccr.run_complete}},
+\code{\link{ccr2.matchDualandSingleSeq}}
 }

@@ -2,18 +2,19 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.NormfoldChanges}
 \alias{ccr2.NormfoldChanges}
-\title{Title}
+\title{Normalize fold changes in dual KO screens}
 \usage{
 ccr2.NormfoldChanges(Dframe, min_reads = 30)
 }
 \arguments{
-\item{Dframe}{}
+\item{Dframe}{Data frame containing the raw counts from dual KO screen, raw counts start from the 9th column. The 9th column include the control raw counts.}
 
-\item{min_reads}{}
+\item{min_reads}{Minimum number of reads required in the control sample (e.g. plasmid) for a pair to be retained (default is 30).}
 }
 \value{
-
+A list containing log2 fold changes, normalized counts, and normalization factors.
 }
 \description{
-Title
+This function normalizes the fold changes in a dual KO screen, removing pairs with low read counts and
+calculating log2 fold changes relative to a control sample.
 }

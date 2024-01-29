@@ -2,18 +2,20 @@
 % Please edit documentation in R/CRISPRcleanRatSquared.R
 \name{ccr2.logFCs2chromPos}
 \alias{ccr2.logFCs2chromPos}
-\title{Title}
+\title{Compute mean of logFCs across replicates, annotate sgRNA pairs with chromosomal positions}
 \usage{
 ccr2.logFCs2chromPos(dual_FC, dual_library)
 }
 \arguments{
-\item{dual_FC}{}
+\item{dual_FC}{data frame containing dual KO log fold changes,}
 
-\item{dual_library}{}
+\item{dual_library}{data frame containing information about the sgRNAs and their genomic locations.}
 }
 \value{
-
+A data frame with avg log fold changes and information about the sgRNAs' genomic locations.
 }
 \description{
-Title
+This function computes the mean of logFCs across replicates (if any) and annotate each
+sgRNA pairs with chromosomal positions (BP) as the median point of the sgRNA
+in position 1/position 2 start and end. It provides additional information about the sgRNAs and their genomic locations.
 }
